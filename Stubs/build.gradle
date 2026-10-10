@@ -1,0 +1,15 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev'
+}
+
+// Compile-time stand-ins for optional mods Daybreak works with but must not bundle or depend on: only the class and
+// method signatures Daybreak calls (Enhanced Celestials 2: Core is closed source). Nothing here ever runs: projects use
+// it as compileOnly, and when the real mod is installed its own classes are the ones loaded.
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(java_version)
+}
+
+neoForge {
+    neoFormVersion = neoform_version
+}

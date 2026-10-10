@@ -1,0 +1,67 @@
+plugins {
+    id 'java-library'
+}
+
+version = "${mod_version}+${mc_version}"
+group = project.group
+
+base {
+    archivesName = "${mod_id}-${project.name.toLowerCase()}"
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(java_version)
+}
+
+repositories {
+    mavenCentral()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = java_version as int
+}
+
+jar {
+    from(rootProject.file('LICENSE')) {
+        rename { "${it}_${mod_id}" }
+    }
+    manifest {
+        attributes([
+                'Specification-Title'   : mod_id,
+                'Specification-Vendor'  : mod_author,
+                'Specification-Version' : '1',
+                'Implementation-Title'  : mod_name,
+                'Implementation-Version': project.version,
+                'Implementation-Vendor' : mod_author,
+                'Built-On-Minecraft'    : mc_version
+        ])
+    }
+}
+
+processResources {
+    // The game version this jar runs on, up to the next release: "26.3" -> [26.3,26.4)
+    def mcParts = mc_version.tokenize('.')
+    def nextMinecraft = (mcParts.take(mcParts.size() - 1) + [(mcParts.last() as int) + 1]).join('.')
+    // NeoForge's own version follows the game's: "26.3.0.43-beta" -> [26.3,26.4)
+    def neoParts = neoforge_version.tokenize('.')
+    def neoforgeRange = "[${neoParts[0]}.${neoParts[1]},${neoParts[0]}.${(neoParts[1] as int) + 1})"
+    def expandProps = [
+            version              : project.version.toString(),
+            mod_id               : mod_id,
+            mod_name             : mod_name,
+            mod_author           : mod_author,
+            mod_description      : mod_description,
+            license              : license,
+            mc_version           : mc_version,
+            minecraft_range      : "[${mc_version},${nextMinecraft})",
+            neoforge_range       : neoforgeRange,
+            fabric_minecraft     : "~${mc_version}",
+            fabric_loader_version: fabric_loader_version,
+            java_version         : java_version
+    ]
+    inputs.properties(expandProps)
+    filesMatching(['META-INF/neoforge.mods.toml', 'fabric.mod.json']) {
+        expand expandProps
+    }
+}

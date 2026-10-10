@@ -1,0 +1,28 @@
+{
+	"required": true,
+	"minVersion": "0.8",
+	"package": "dev.romoslayer.daybreak.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+		"AttributeTrackSamplerMixin",
+		"BlockMixin",
+		"BoundTickingBlockEntityMixin",
+		"EnvironmentAttributeSystemMixin",
+		"LevelMixin",
+		"MinecraftServerMixin",
+		"NaturalSpawnerMixin",
+		"PatrolSpawnerMixin",
+		"PhantomSpawnerMixin",
+		"PacketProcessorMixin",
+		"ServerCommonPacketListenerMixin",
+		"ServerLevelMixin",
+		"ServerLevelSleepMixin",
+		"ServerPlayerMixin",
+		"TimelineMixin",
+		"ValueSamplerMixin",
+		"VillageSiegeMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

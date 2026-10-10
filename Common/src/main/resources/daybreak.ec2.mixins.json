@@ -1,0 +1,15 @@
+{
+	"required": false,
+	"minVersion": "0.8",
+	"package": "dev.romoslayer.daybreak.compat.ec2.mixin",
+	"plugin": "dev.romoslayer.daybreak.compat.ec2.Ec2MixinPlugin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+		"LunarForecastInvoker",
+		"LunarForecastMixin",
+		"LunarForecastTonightMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
