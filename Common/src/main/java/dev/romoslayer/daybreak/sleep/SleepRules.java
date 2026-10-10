@@ -31,6 +31,7 @@ public final class SleepRules {
 	public static final long NIGHT_START = 12542L;
 	public static final long NIGHT_END = 23460L;
 	private static final int NOTE_INTERVAL = 100;
+	private static long lastNote = Long.MIN_VALUE / 2;
 
 	/** Things that keep anyone from skipping, with the reason shown to sleepers (Enhanced Celestials adds one). */
 	private static final List<Function<ServerPlayer, @Nullable String>> BLOCKERS = new ArrayList<>();
@@ -48,7 +49,10 @@ public final class SleepRules {
 			return true;
 		}
 		String reason = blockingReason(level);
-		if (reason != null && level.getGameTime() % NOTE_INTERVAL == 0) {
+		long now = level.getGameTime();
+		// Right away when the skip is first held back, then every few seconds while it stays that way
+		if (reason != null && (now - lastNote >= NOTE_INTERVAL || now < lastNote)) {
+			lastNote = now;
 			Component note = Component.literal("The night can't be skipped: " + reason);
 			for (ServerPlayer player : level.players()) {
 				if (player.isSleeping()) {
