@@ -1,6 +1,7 @@
 package dev.romoslayer.daybreak;
 
 import dev.romoslayer.daybreak.config.DaybreakConfig;
+import dev.romoslayer.daybreak.mc.Versioned;
 import dev.romoslayer.daybreak.sync.ClientTime;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -10,7 +11,7 @@ import net.minecraft.server.MinecraftServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Loader-independent entry point; the Fabric and NeoForge entrypoints call into here. */
+/** Loader-independent entry point; the Fabric, NeoForge and Forge entrypoints call into here. */
 public final class Daybreak {
 	public static final String MOD_ID = "daybreak";
 	public static final Logger LOGGER = LoggerFactory.getLogger("Daybreak");
@@ -25,7 +26,7 @@ public final class Daybreak {
 		DaybreakConfig config = DaybreakConfig.get();
 		LOGGER.info("Daybreak {}: {} blocks per day, later towards the {}, in {}", config.enabled ? "enabled" : "disabled", config.blocksPerDay,
 				config.direction == DaybreakConfig.Direction.EAST_LATER ? "east" : "west", config.dimensions);
-		dev.romoslayer.daybreak.compat.ec2.Ec2Bootstrap.init();
+		Versioned.initCompat();
 		dev.romoslayer.daybreak.compat.seasonfall.SeasonfallBridge.init();
 		if (Boolean.getBoolean("daybreak.testHarness")) {
 			// Dev servers only: the harness package is not in the release jars

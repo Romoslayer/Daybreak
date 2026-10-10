@@ -18,10 +18,11 @@ plugins {
 }
 
 rootProject.name = 'daybreak'
-include('Common', 'Fabric', 'NeoForge', 'Stubs')
+include('Common', 'Fabric', 'NeoForge', 'Forge')
 
-// One source tree per game version family. The default is 26.3; others are added as versions/<mc>.properties.
-// Everything that differs between versions lives in that file.
+// One source tree builds every supported game version. The default is 26.3; build another with
+//   gradlew build -Pmc=26.2      (or -Pmc=1.21.1, -Pmc=1.20.1)
+// Values that differ between versions live in versions/<mc>.properties, code that differs in src/<generation>.
 def mc = providers.gradleProperty('mc').getOrElse('26.3')
 def versionFile = file("versions/${mc}.properties")
 if (!versionFile.isFile()) {
@@ -29,6 +30,10 @@ if (!versionFile.isFile()) {
 }
 def versionProps = new Properties()
 versionFile.withInputStream { versionProps.load(it) }
+// Compile-time stand-ins for Enhanced Celestials 2, which Daybreak supports on Minecraft 26.x only
+if (versionProps.getProperty('generation') == 'mc26') {
+    include('Stubs')
+}
 gradle.beforeProject { project ->
     versionProps.each { key, value -> project.ext.set(key as String, value) }
 }

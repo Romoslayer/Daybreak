@@ -6,12 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
-import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.Test;
 
 class DaybreakConfigTest {
-	private static final Identifier OVERWORLD = Identifier.withDefaultNamespace("overworld");
-	private static final Identifier NETHER = Identifier.withDefaultNamespace("the_nether");
+	private static final String OVERWORLD = "minecraft:overworld";
+	private static final String NETHER = "minecraft:the_nether";
 
 	@Test
 	void defaultsAreTheDocumentedOnes() {
@@ -74,7 +73,7 @@ class DaybreakConfigTest {
 		assertEquals(original.direction, back.direction);
 		assertEquals(original.dimensions, back.dimensions);
 		assertEquals(original.debug, back.debug);
-		assertTrue(back.isRegional(Identifier.fromNamespaceAndPath("mypack", "moonbase")));
+		assertTrue(back.isRegional("mypack:moonbase"));
 		assertEquals(text, back.serialize(), "stable when rewritten");
 	}
 }

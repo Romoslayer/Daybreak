@@ -1,0 +1,12 @@
+{
+	"required": true,
+	"minVersion": "0.8",
+	"package": "dev.romoslayer.daybreak.forge.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+		"ServerLevelForgeSkipMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

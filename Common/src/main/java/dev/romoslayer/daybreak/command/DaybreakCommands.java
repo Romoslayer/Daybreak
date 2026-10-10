@@ -7,6 +7,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import dev.romoslayer.daybreak.Daybreak;
 import dev.romoslayer.daybreak.config.DaybreakConfig;
+import dev.romoslayer.daybreak.mc.Versioned;
 import dev.romoslayer.daybreak.sync.ClientTime;
 import dev.romoslayer.daybreak.time.RegionalTime;
 import dev.romoslayer.daybreak.time.SolarTime;
@@ -50,7 +51,7 @@ public final class DaybreakCommands {
 
 	public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
 		LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal(Daybreak.MOD_ID)
-				.requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+				.requires(Versioned.operators())
 				.then(Commands.literal("time")
 						.executes(ctx -> time(ctx, ctx.getSource().getPosition().x))
 						.then(Commands.argument("x", DoubleArgumentType.doubleArg()).executes(ctx -> time(ctx, DoubleArgumentType.getDouble(ctx, "x")))))
@@ -80,7 +81,7 @@ public final class DaybreakCommands {
 	public static String describeTime(ServerLevel level, double x) {
 		long world = RegionalTime.worldClock(level);
 		if (!RegionalTime.isRegional(level)) {
-			return "No regional time in " + level.dimension().identifier() + ": " + clock(RegionalTime.timeOfDay(world)) + " everywhere";
+			return "No regional time in " + Versioned.id(level.dimension()) + ": " + clock(RegionalTime.timeOfDay(world)) + " everywhere";
 		}
 		long solar = RegionalTime.solarClock(world, x);
 		StringBuilder text = new StringBuilder(String.format(Locale.ROOT, "At x = %.0f: %s (ticks %d), day %d. At x = 0: %s.", x,
@@ -108,7 +109,7 @@ public final class DaybreakCommands {
 	private static int debug(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
 		ServerPlayer player = EntityArgument.getPlayer(ctx, "player");
 		Long client = ClientTime.clientClock(player);
-		ServerLevel level = player.level();
+		ServerLevel level = Versioned.level(player);
 		long expected = RegionalTime.isRegional(level) ? RegionalTime.solarClock(RegionalTime.worldClock(level), player.getX()) : RegionalTime.worldClock(level);
 		return reply(ctx, String.format(Locale.ROOT, "%s at x = %.0f: their game shows %s, local time is %s", player.getName().getString(), player.getX(),
 				client == null ? "nothing yet" : clock(RegionalTime.timeOfDay(client)) + " (ticks " + RegionalTime.timeOfDay(client) + ")",

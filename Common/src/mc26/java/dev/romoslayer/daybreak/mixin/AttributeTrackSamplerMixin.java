@@ -1,6 +1,7 @@
 package dev.romoslayer.daybreak.mixin;
 
 import dev.romoslayer.daybreak.config.DaybreakConfig;
+import dev.romoslayer.daybreak.mc.Clocks;
 import dev.romoslayer.daybreak.time.RegionalTime;
 import dev.romoslayer.daybreak.time.RegionalTrack;
 import net.minecraft.core.Holder;
@@ -49,7 +50,7 @@ abstract class AttributeTrackSamplerMixin<Value, Argument> implements RegionalTr
 	@Override
 	@SuppressWarnings("unchecked")
 	public Object daybreak$sampleAt(Object baseValue, double x) {
-		long world = this.clockManager.getInstance(this.clock).totalTicks();
+		long world = Clocks.totalTicks(this.clockManager, this.clock);
 		long ticks = DaybreakConfig.get().enabled ? RegionalTime.solarClock(world, x) : world;
 		return this.modifier.apply((Value) baseValue, this.argumentSampler.sample(ticks));
 	}

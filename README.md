@@ -1,8 +1,9 @@
 # Daybreak
 
-Regional day and night for Minecraft **26.3** servers, on **Fabric and NeoForge**. The time of day depends on how far
-east or west you are: it can be noon in one place and midnight in another, in the same world, at the same moment.
-Players join with a completely unmodified game: no client mod, resource pack or client networking is needed.
+Regional day and night for Minecraft servers: **26.3, 26.2, 1.21.1 and 1.20.1**, on **Fabric, NeoForge and Forge**. The
+time of day depends on how far east or west you are: it can be noon in one place and midnight in another, in the same
+world, at the same moment. Players join with a completely unmodified game: no client mod, resource pack or client
+networking is needed.
 
 There is still one world clock. Every place's local time is that clock plus an offset from its x coordinate (by default
 24 000 blocks east is one day later). The change is continuous, with no time zones or jumps, and every place keeps
@@ -65,12 +66,25 @@ the time a player's game is showing, `/daybreak reload`.
 - **Seasonfall**: seasons are untouched. With a Seasonfall version that supports Daybreak, every place gets its own
   seasonally longer or shorter day; with older versions, switch Seasonfall's day length off.
 - **Stormcell**: works alongside; storms over a player count as night for sleeping.
-- **Enhanced Celestials 2**: lunar events are still decided once for the whole world, and each place gets the night's
-  event during its own night, so a blood moon sweeps from east to west. If a future Enhanced Celestials version changes
-  what Daybreak hooks into, Daybreak leaves its lunar events global instead of breaking anything.
+- **Enhanced Celestials 2** (Minecraft 26.x): lunar events are still decided once for the whole world, and each place
+  gets the night's event during its own night, so a blood moon sweeps from east to west. If a future Enhanced Celestials
+  version changes what Daybreak hooks into, Daybreak leaves its lunar events global instead of breaking anything.
 - **Geyser**: Bedrock players should see their local time the same way (Geyser passes each player's time on).
 - Other mods: anything that checks the light or day/night at a position, or from a mob's own tick, follows the local
   time automatically.
+
+## Versions
+
+| Minecraft | Fabric | NeoForge | Forge |
+|---|---|---|---|
+| 26.3 | ✓ | ✓ | ✓ |
+| 26.2 | ✓ | ✓ | ✓ |
+| 1.21.1 | ✓ | ✓ | ✓ |
+| 1.20.1 | ✓ | ✓ (47.1) | ✓ |
+
+Everything above works the same on every version, with two differences on 1.21.1 and 1.20.1: Enhanced Celestials 2
+support is for 26.x only, and with Seasonfall's seasonal day length the players' games run their sky at normal speed and
+are kept on their local time by the server's regular time updates (26.x clients are told the right speed instead).
 
 ## API
 
@@ -80,11 +94,14 @@ the time a player's game is showing, `/daybreak reload`.
 ## Building
 
 ```
-gradlew build
+gradlew build -Pmc=26.3
 ```
 
-builds the Fabric and NeoForge jars into `Fabric/build/libs` and `NeoForge/build/libs` and runs the unit tests.
-`Stubs/` holds compile-only stand-ins for the optional mods Daybreak works with; it is never part of a jar.
+builds the Fabric, NeoForge and Forge jars for one Minecraft version (26.3, 26.2, 1.21.1 or 1.20.1; 26.3 if left out)
+into `<Loader>/build/<generation>/libs` and runs the unit tests. Shared code is in `src/main`; what differs between
+Minecraft generations is in `src/mc26` (world clocks and timelines), `src/legacy` with `src/mc21` and `src/mc20` (the
+older day time), and the odd class that differs between 26.2 and 26.3 in `src/26.2` and `src/26.3`. `Stubs/` holds
+compile-only stand-ins for the optional mods Daybreak works with; it is never part of a jar.
 
 ## License
 

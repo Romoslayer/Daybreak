@@ -2,6 +2,7 @@ package dev.romoslayer.daybreak.sleep;
 
 import dev.romoslayer.daybreak.config.DaybreakConfig;
 import dev.romoslayer.daybreak.context.RegionalContext;
+import dev.romoslayer.daybreak.mc.Versioned;
 import dev.romoslayer.daybreak.time.RegionalTime;
 import dev.romoslayer.daybreak.time.SolarTime;
 import java.util.ArrayList;
@@ -12,7 +13,6 @@ import java.util.function.Function;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.attribute.EnvironmentAttributes;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -60,7 +60,7 @@ public final class SleepRules {
 			Component note = note(reason);
 			for (ServerPlayer player : level.players()) {
 				if (player.isSleeping()) {
-					player.sendOverlayMessage(note);
+					Versioned.overlay(player, note);
 				}
 			}
 		}
@@ -85,16 +85,14 @@ public final class SleepRules {
 		long now = level.getGameTime();
 		// Only skips that move the clock count: sleeping out a daytime storm moves nothing, so it is never held back
 		if (cooldown > 0 && last != null && now >= last && now - last < cooldown && skipTicks(level) > 0) {
-			long minutes = Math.ceilDiv(last + cooldown - now, 1200L);
+			long minutes = -Math.floorDiv(now - last - cooldown, 1200L);
 			return "the last one was skipped too recently (about " + minutes + (minutes == 1 ? " more minute)" : " more minutes)");
 		}
 		for (ServerPlayer player : level.players()) {
 			if (player.isSpectator()) {
 				continue;
 			}
-			boolean couldSleep = RegionalContext.with(level, player.position(),
-					() -> level.environmentAttributes().getValue(EnvironmentAttributes.BED_RULE, player.blockPosition()).canSleep(level));
-			if (!couldSleep) {
+			if (!Versioned.couldSleepHere(level, player)) {
 				return "some players are in daylight";
 			}
 			for (Function<ServerPlayer, String> blocker : BLOCKERS) {

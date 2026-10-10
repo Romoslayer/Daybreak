@@ -1,6 +1,7 @@
 package dev.romoslayer.daybreak.sync;
 
 import dev.romoslayer.daybreak.config.DaybreakConfig;
+import dev.romoslayer.daybreak.mc.Clocks;
 import dev.romoslayer.daybreak.time.RegionalTime;
 import dev.romoslayer.daybreak.time.SolarTime;
 import java.util.HashMap;
@@ -67,6 +68,8 @@ public final class ClientTime {
 
 	public static void tick(MinecraftServer server) {
 		long resync = DaybreakConfig.get().resyncTicks;
+		// Each clock's state, worked out once per tick however many players share it
+		Map<Holder<WorldClock>, ClockNetworkState> states = new HashMap<>();
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 			ServerLevel level = player.level();
 			Holder<WorldClock> clock = clockOf(level);
@@ -77,7 +80,7 @@ public final class ClientTime {
 			boolean regional = RegionalTime.isRegional(level);
 			boolean stale = sent == null || sent.regional != regional;
 			if (!stale && regional) {
-				ClockNetworkState world = server.clockManager().getInstance(clock).packNetworkState(server);
+				ClockNetworkState world = states.computeIfAbsent(clock, c -> Clocks.networkState(server, c));
 				long local = world.totalTicks() + RegionalTime.offsetTicks(player.getX());
 				long actual = SolarTime.solarClock(local);
 				float rate = (float) (world.rate() * SolarTime.rate(local));
@@ -86,7 +89,7 @@ public final class ClientTime {
 			if (stale) {
 				// Sent as the plain world clock; personalize() shifts it like every other time packet
 				player.connection.send(new ClientboundSetTimePacket(level.getGameTime(),
-						Map.of(clock, server.clockManager().getInstance(clock).packNetworkState(server))));
+						Map.of(clock, states.computeIfAbsent(clock, c -> Clocks.networkState(server, c)))));
 			}
 		}
 		if (server.getTickCount() % 200 == 0) {

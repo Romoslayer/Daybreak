@@ -21,7 +21,7 @@ public final class SolarTime {
 
 	/** Set once per tick from Seasonfall (or reset to 0.5). */
 	public static void setDaytimeFraction(double fraction) {
-		daytimeFraction = Double.isFinite(fraction) ? Math.clamp(fraction, MIN_FRACTION, MAX_FRACTION) : EQUAL;
+		daytimeFraction = Double.isFinite(fraction) ? Math.max(MIN_FRACTION, Math.min(MAX_FRACTION, fraction)) : EQUAL;
 	}
 
 	public static double daytimeFraction() {

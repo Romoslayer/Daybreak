@@ -10,7 +10,8 @@ import org.spongepowered.asm.mixin.Mixin;
 /** Remembers which level timeline layers are being built for, so TimelineMixin can tell regional levels apart. */
 @Mixin(EnvironmentAttributeSystem.class)
 abstract class EnvironmentAttributeSystemMixin {
-	@WrapMethod(method = "addDynamicLayers")
+	// 26.3 calls it addDynamicLayers, 26.2 addDefaultLayers (same parameters)
+	@WrapMethod(method = {"addDynamicLayers", "addDefaultLayers"})
 	private static void daybreak$rememberLevel(EnvironmentAttributeSystem.Builder builder, Level level, Operation<Void> original) {
 		Level previous = TimelineBuild.LEVEL.get();
 		TimelineBuild.LEVEL.set(level);

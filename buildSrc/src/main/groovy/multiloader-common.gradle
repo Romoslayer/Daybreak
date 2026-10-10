@@ -5,6 +5,21 @@ plugins {
 version = "${mod_version}+${mc_version}"
 group = project.group
 
+// Minecraft 26.x, 1.21.x and 1.20.x are different API generations: 26.x runs the day on world clocks and timelines,
+// 1.21.x and 1.20.x on the old day time. Code that differs lives in src/<generation> next to the shared src/main;
+// what 1.21.x and 1.20.x have in common is in src/legacy. Each generation builds into its own directory, so classes
+// compiled for one Java version never mix with another's. The rare class that differs between two releases of the same
+// generation (26.2 and 26.3) is in src/<version>.
+def legacy = generation != 'mc26'
+layout.buildDirectory = layout.projectDirectory.dir("build/${generation}")
+sourceSets.main.java.srcDir "src/${generation}/java"
+sourceSets.main.resources.srcDir "src/${generation}/resources"
+sourceSets.main.java.srcDir "src/${mc_version}/java"
+if (legacy) {
+    sourceSets.main.java.srcDir 'src/legacy/java'
+    sourceSets.main.resources.srcDir 'src/legacy/resources'
+}
+
 base {
     archivesName = "${mod_id}-${project.name.toLowerCase()}"
 }
@@ -15,6 +30,11 @@ java {
 
 repositories {
     mavenCentral()
+}
+
+dependencies {
+    // @Nullable; Minecraft 26.x ships it, 1.21.x and 1.20.x do not (annotations only, nothing needed at runtime)
+    compileOnly 'org.jspecify:jspecify:1.0.0'
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -40,12 +60,15 @@ jar {
 }
 
 processResources {
-    // The game version this jar runs on, up to the next release: "26.3" -> [26.3,26.4)
+    // The game version this jar runs on, up to the next release: "26.3" -> [26.3,26.4), "1.21.1" -> [1.21.1,1.21.2)
     def mcParts = mc_version.tokenize('.')
     def nextMinecraft = (mcParts.take(mcParts.size() - 1) + [(mcParts.last() as int) + 1]).join('.')
-    // NeoForge's own version follows the game's: "26.3.0.43-beta" -> [26.3,26.4)
+    // NeoForge's own version: 26.x pins it to the game's ("26.3.0.64-beta" -> [26.3,26.4)), 1.21.1 is NeoForge 21.1.x
     def neoParts = neoforge_version.tokenize('.')
     def neoforgeRange = "[${neoParts[0]}.${neoParts[1]},${neoParts[0]}.${(neoParts[1] as int) + 1})"
+    // The mixin configs each loader declares: Enhanced Celestials 2 support and Fabric's sleep-skip mixin are 26.x only
+    def neoforgeMixins = (legacy ? ["${mod_id}.mixins.json"] : ["${mod_id}.mixins.json", "${mod_id}.ec2.mixins.json"])
+            .collect { "[[mixins]]\nconfig = \"${it}\"\n" }.join('\n')
     def expandProps = [
             version              : project.version.toString(),
             mod_id               : mod_id,
@@ -56,12 +79,26 @@ processResources {
             mc_version           : mc_version,
             minecraft_range      : "[${mc_version},${nextMinecraft})",
             neoforge_range       : neoforgeRange,
-            fabric_minecraft     : "~${mc_version}",
+            // Fabric: any 26.x patch release ("~26.3"), but exactly the obfuscated releases (1.21.1)
+            fabric_minecraft     : legacy ? mc_version : "~${mc_version}",
             fabric_loader_version: fabric_loader_version,
+            neoforge_mixins      : neoforgeMixins,
             java_version         : java_version
     ]
     inputs.properties(expandProps)
     filesMatching(['META-INF/neoforge.mods.toml', 'fabric.mod.json']) {
         expand expandProps
+    }
+    // fabric.mod.json lists every mixin config (so the source stays valid JSON); 1.21.x and 1.20.x have only the shared one
+    if (legacy) {
+        filesMatching('fabric.mod.json') {
+            filter { it.replace(", \"${mod_id}.fabric.mixins.json\", \"${mod_id}.ec2.mixins.json\"", '') }
+        }
+    }
+    // Minecraft 1.20.x runs on Java 17, and its Mixin (Forge 47's in particular) knows no higher compatibility level
+    if (generation == 'mc20') {
+        filesMatching('*.mixins.json') {
+            filter { it.replace('"JAVA_21"', '"JAVA_17"') }
+        }
     }
 }

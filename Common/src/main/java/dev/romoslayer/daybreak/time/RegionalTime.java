@@ -1,6 +1,10 @@
 package dev.romoslayer.daybreak.time;
 
 import dev.romoslayer.daybreak.config.DaybreakConfig;
+import dev.romoslayer.daybreak.mc.Versioned;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import org.jspecify.annotations.Nullable;
@@ -19,6 +23,8 @@ public final class RegionalTime {
 	public static final long DAY_TICKS = 24000L;
 	/** One full moon cycle (8 days): adding it changes neither the time of day nor the moon phase. */
 	public static final long MOON_CYCLE_TICKS = 8L * DAY_TICKS;
+	/** Dimension ids as text, made once per dimension: isRegional is asked on every light read. */
+	private static final Map<ResourceKey<Level>, String> IDS = new ConcurrentHashMap<>();
 
 	private RegionalTime() {
 	}
@@ -60,22 +66,26 @@ public final class RegionalTime {
 		if (localClock >= 0) {
 			return localClock;
 		}
-		long cycles = Math.ceilDiv(-localClock, MOON_CYCLE_TICKS);
+		long cycles = -Math.floorDiv(localClock, MOON_CYCLE_TICKS);
 		return localClock + cycles * MOON_CYCLE_TICKS;
 	}
 
 	/** Whether this level has regional time: a server level of a configured dimension, with Daybreak enabled. */
 	public static boolean isRegional(@Nullable Level level) {
-		return level instanceof ServerLevel serverLevel && DaybreakConfig.get().isRegional(serverLevel.dimension().identifier());
+		return level instanceof ServerLevel serverLevel && DaybreakConfig.get().isRegional(id(serverLevel));
 	}
 
 	/** Whether this server level's dimension is configured for regional time, even while Daybreak is disabled. */
 	public static boolean isListed(@Nullable Level level) {
-		return level instanceof ServerLevel serverLevel && DaybreakConfig.get().isListed(serverLevel.dimension().identifier());
+		return level instanceof ServerLevel serverLevel && DaybreakConfig.get().isListed(id(serverLevel));
 	}
 
-	/** The level's world clock (its default clock's total ticks), or 0 for a dimension without a clock. */
+	/** The level's world clock: the time of day vanilla runs on, never shifted by Daybreak. */
 	public static long worldClock(ServerLevel level) {
-		return level.getDefaultClockTime();
+		return Versioned.worldClock(level);
+	}
+
+	private static String id(ServerLevel level) {
+		return IDS.computeIfAbsent(level.dimension(), Versioned::id);
 	}
 }

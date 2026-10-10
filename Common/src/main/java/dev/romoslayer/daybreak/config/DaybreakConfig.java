@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
+import dev.romoslayer.daybreak.mc.Versioned;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
@@ -16,7 +17,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import net.minecraft.resources.Identifier;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -83,7 +83,7 @@ public final class DaybreakConfig {
 	@Comment("Extra logging for finding problems.")
 	public boolean debug = false;
 
-	private transient Set<Identifier> regionalDimensions = Set.of();
+	private transient Set<String> regionalDimensions = Set.of();
 
 	public static DaybreakConfig get() {
 		return instance;
@@ -94,12 +94,12 @@ public final class DaybreakConfig {
 		instance = config;
 	}
 
-	public boolean isRegional(Identifier dimension) {
+	public boolean isRegional(String dimension) {
 		return this.enabled && this.regionalDimensions.contains(dimension);
 	}
 
 	/** Whether the dimension is listed, whether or not Daybreak is currently enabled. */
-	public boolean isListed(Identifier dimension) {
+	public boolean isListed(String dimension) {
 		return this.regionalDimensions.contains(dimension);
 	}
 
@@ -187,26 +187,26 @@ public final class DaybreakConfig {
 			this.direction = defaults.direction;
 		}
 		if (this.resyncTicks < MIN_RESYNC_TICKS || this.resyncTicks > MAX_RESYNC_TICKS) {
-			int clamped = Math.clamp(this.resyncTicks, MIN_RESYNC_TICKS, MAX_RESYNC_TICKS);
+			int clamped = Math.max(MIN_RESYNC_TICKS, Math.min(MAX_RESYNC_TICKS, this.resyncTicks));
 			problems.add("resyncTicks must be from " + MIN_RESYNC_TICKS + " to " + MAX_RESYNC_TICKS + ", was " + this.resyncTicks + "; using " + clamped);
 			this.resyncTicks = clamped;
 		}
 		if (this.sleepSkipCooldownTicks < 0 || this.sleepSkipCooldownTicks > MAX_SKIP_COOLDOWN_TICKS) {
-			int clamped = Math.clamp(this.sleepSkipCooldownTicks, 0, MAX_SKIP_COOLDOWN_TICKS);
+			int clamped = Math.max(0, Math.min(MAX_SKIP_COOLDOWN_TICKS, this.sleepSkipCooldownTicks));
 			problems.add("sleepSkipCooldownTicks must be from 0 to " + MAX_SKIP_COOLDOWN_TICKS + ", was " + this.sleepSkipCooldownTicks + "; using " + clamped);
 			this.sleepSkipCooldownTicks = clamped;
 		}
 		if (this.dimensions == null) {
 			this.dimensions = defaults.dimensions;
 		}
-		Set<Identifier> ids = new LinkedHashSet<>();
+		Set<String> ids = new LinkedHashSet<>();
 		List<String> kept = new ArrayList<>();
 		for (String dimension : this.dimensions) {
-			Identifier id = dimension == null ? null : Identifier.tryParse(dimension.trim());
+			String id = dimension == null ? null : Versioned.parseId(dimension.trim());
 			if (id == null) {
 				problems.add("dimensions: \"" + dimension + "\" is not a dimension id; ignored");
 			} else if (ids.add(id)) {
-				kept.add(id.toString());
+				kept.add(id);
 			}
 		}
 		this.dimensions = kept;
