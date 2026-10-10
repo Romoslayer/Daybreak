@@ -27,7 +27,7 @@ abstract class ServerLevelSkipMixin {
 		if (!RegionalTime.isRegional(level)) {
 			return original.call(clocks, clock, marker);
 		}
-		long skip = SleepRules.skipTicks(level);
+		long skip = SleepRules.endNight(level);
 		if (skip > 0) {
 			clocks.addTicks(clock, (int) skip);
 		}

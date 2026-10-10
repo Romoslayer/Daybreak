@@ -6,6 +6,8 @@ import dev.romoslayer.daybreak.time.RegionalTime;
 import dev.romoslayer.daybreak.time.SolarTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.function.Function;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -32,6 +34,8 @@ public final class SleepRules {
 	public static final long NIGHT_END = 23460L;
 	private static final int NOTE_INTERVAL = 100;
 	private static long lastNote = Long.MIN_VALUE / 2;
+	/** Game time (real ticks, which skips do not move) of the last night skip, per loaded level (a new world starts afresh). */
+	private static final Map<ServerLevel, Long> LAST_SKIP = new WeakHashMap<>();
 
 	/** Things that keep anyone from skipping, with the reason shown to sleepers (Enhanced Celestials adds one). */
 	private static final List<Function<ServerPlayer, @Nullable String>> BLOCKERS = new ArrayList<>();
@@ -53,7 +57,7 @@ public final class SleepRules {
 		// Right away when the skip is first held back, then every few seconds while it stays that way
 		if (reason != null && (now - lastNote >= NOTE_INTERVAL || now < lastNote)) {
 			lastNote = now;
-			Component note = Component.literal("The night can't be skipped: " + reason);
+			Component note = note(reason);
 			for (ServerPlayer player : level.players()) {
 				if (player.isSleeping()) {
 					player.sendOverlayMessage(note);
@@ -63,9 +67,26 @@ public final class SleepRules {
 		return reason == null;
 	}
 
+	/** Why the night could not be skipped right now, or null if it could (always null outside regional dimensions). */
+	public static @Nullable String reasonIfBlocked(ServerLevel level) {
+		return RegionalTime.isRegional(level) ? blockingReason(level) : null;
+	}
+
+	public static Component note(String reason) {
+		return Component.literal("The night can't be skipped: " + reason);
+	}
+
 	private static @Nullable String blockingReason(ServerLevel level) {
 		if (!DaybreakConfig.get().allowSleepSkip) {
 			return "this server doesn't skip nights";
+		}
+		int cooldown = DaybreakConfig.get().sleepSkipCooldownTicks;
+		Long last = LAST_SKIP.get(level);
+		long now = level.getGameTime();
+		// Only skips that move the clock count: sleeping out a daytime storm moves nothing, so it is never held back
+		if (cooldown > 0 && last != null && now >= last && now - last < cooldown && skipTicks(level) > 0) {
+			long minutes = Math.ceilDiv(last + cooldown - now, 1200L);
+			return "the last one was skipped too recently (about " + minutes + (minutes == 1 ? " more minute)" : " more minutes)");
 		}
 		for (ServerPlayer player : level.players()) {
 			if (player.isSpectator()) {
@@ -87,10 +108,18 @@ public final class SleepRules {
 	}
 
 	/**
-	 * How many ticks the clock moves when the night ends: until the sleeper furthest from morning reaches local 6 AM, or
-	 * 0 when any sleeper is only sleeping because of a storm.
+	 * The night ends: how many ticks the clock moves, until the sleeper furthest from morning reaches local 6 AM, or
+	 * 0 when any sleeper is only sleeping because of a storm. A skip that moves the clock starts the skip cooldown.
 	 */
-	public static long skipTicks(ServerLevel level) {
+	public static long endNight(ServerLevel level) {
+		long skip = skipTicks(level);
+		if (skip > 0) {
+			LAST_SKIP.put(level, level.getGameTime());
+		}
+		return skip;
+	}
+
+	static long skipTicks(ServerLevel level) {
 		long world = RegionalTime.worldClock(level);
 		long skip = 0;
 		for (ServerPlayer player : level.players()) {

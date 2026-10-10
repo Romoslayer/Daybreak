@@ -34,6 +34,8 @@ public final class DaybreakConfig {
 	public static final double MAX_BLOCKS_PER_DAY = 1.0E9;
 	public static final int MIN_RESYNC_TICKS = 1;
 	public static final int MAX_RESYNC_TICKS = 1200;
+	/** Ten in-game days. */
+	public static final int MAX_SKIP_COOLDOWN_TICKS = 240000;
 
 	public enum Direction {
 		EAST_LATER,
@@ -62,6 +64,12 @@ public final class DaybreakConfig {
 			Whether sleeping can skip the night. The night is only skipped when every player in the dimension is in local night
 			(and enough of them sleep, see the playersSleepingPercentage game rule). false: beds still work but never skip.""")
 	public boolean allowSleepSkip = true;
+
+	@Comment("""
+			After a night is skipped, how many ticks of normal time must pass before another skip (20 ticks = 1 second). Without
+			it, a player could skip, travel west to where it is night again and skip again, racing the world clock (and seasons
+			and lunar events) ahead. 12000 (10 minutes) is about the wait vanilla has between nights. 0 = no cooldown.""")
+	public int sleepSkipCooldownTicks = 12000;
 
 	@Comment("How far (in ticks of time) a player's sky may drift before they are sent their local time again (1-1200).")
 	public int resyncTicks = 20;
@@ -182,6 +190,11 @@ public final class DaybreakConfig {
 			int clamped = Math.clamp(this.resyncTicks, MIN_RESYNC_TICKS, MAX_RESYNC_TICKS);
 			problems.add("resyncTicks must be from " + MIN_RESYNC_TICKS + " to " + MAX_RESYNC_TICKS + ", was " + this.resyncTicks + "; using " + clamped);
 			this.resyncTicks = clamped;
+		}
+		if (this.sleepSkipCooldownTicks < 0 || this.sleepSkipCooldownTicks > MAX_SKIP_COOLDOWN_TICKS) {
+			int clamped = Math.clamp(this.sleepSkipCooldownTicks, 0, MAX_SKIP_COOLDOWN_TICKS);
+			problems.add("sleepSkipCooldownTicks must be from 0 to " + MAX_SKIP_COOLDOWN_TICKS + ", was " + this.sleepSkipCooldownTicks + "; using " + clamped);
+			this.sleepSkipCooldownTicks = clamped;
 		}
 		if (this.dimensions == null) {
 			this.dimensions = defaults.dimensions;

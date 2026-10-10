@@ -33,6 +33,8 @@ There is one world clock, so skipping a night moves it for everyone. Daybreak's 
 - The clock then moves until the sleeper furthest from morning reaches 6 AM. Everyone moves by the same amount, so
   players further east wake later in their morning.
 - Sleeping through a daytime thunderstorm clears the storm and wakes everyone without moving the clock.
+- After a skip, another one has to wait 10 minutes of normal time (`sleepSkipCooldownTicks`), so a player cannot
+  skip, travel west to where it is night again and skip again to race the clock ahead.
 - `allowSleepSkip: false` in the config: beds never skip the night.
 
 ## Settings
@@ -46,6 +48,7 @@ There is one world clock, so skipping a night moves it for everyone. Daybreak's 
 | `blocksPerDay` | `24000` | blocks east or west for one full day of difference |
 | `direction` | `EAST_LATER` | or `WEST_LATER` |
 | `allowSleepSkip` | `true` | whether sleeping can skip the night |
+| `sleepSkipCooldownTicks` | `12000` | after a skip, ticks of normal time before another skip (10 minutes; 0 = none) |
 | `resyncTicks` | `20` | how far a player's sky may drift before their time is resent |
 | `seasonalDayLength` | `true` | use Seasonfall's seasonal day length per place |
 | `enhancedCelestials` | `true` | regional lunar events with Enhanced Celestials |

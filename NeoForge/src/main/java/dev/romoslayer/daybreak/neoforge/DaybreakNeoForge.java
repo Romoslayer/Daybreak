@@ -23,7 +23,7 @@ public final class DaybreakNeoForge {
 	/** NeoForge replaces vanilla's "move the clock to morning" with this event; Daybreak moves it by the sleepers' amount. */
 	private static void onSleepFinished(SleepFinishedTimeEvent event) {
 		if (event.getLevel() instanceof ServerLevel level && RegionalTime.isRegional(level)) {
-			event.setAdjustment(new ClockAdjustment.Relative(SleepRules.skipTicks(level)));
+			event.setAdjustment(new ClockAdjustment.Relative(SleepRules.endNight(level)));
 		}
 	}
 }

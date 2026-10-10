@@ -45,6 +45,16 @@ class DaybreakConfigTest {
 	}
 
 	@Test
+	void sleepSkipCooldown() {
+		assertEquals(12000, DaybreakConfig.parse("{}", new ArrayList<>()).sleepSkipCooldownTicks, "10 minutes by default");
+		assertEquals(0, DaybreakConfig.parse("{\"sleepSkipCooldownTicks\": 0}", new ArrayList<>()).sleepSkipCooldownTicks, "0 turns it off");
+		List<String> problems = new ArrayList<>();
+		assertEquals(0, DaybreakConfig.parse("{\"sleepSkipCooldownTicks\": -5}", problems).sleepSkipCooldownTicks, "negative clamped");
+		assertEquals(DaybreakConfig.MAX_SKIP_COOLDOWN_TICKS, DaybreakConfig.parse("{\"sleepSkipCooldownTicks\": 99999999}", problems).sleepSkipCooldownTicks);
+		assertEquals(2, problems.size(), problems.toString());
+	}
+
+	@Test
 	void disabledMeansNoRegionalDimension() {
 		DaybreakConfig config = DaybreakConfig.parse("{\"enabled\": false}", new ArrayList<>());
 		assertFalse(config.isRegional(OVERWORLD));
