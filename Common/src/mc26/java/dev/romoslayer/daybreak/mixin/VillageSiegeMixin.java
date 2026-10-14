@@ -6,34 +6,81 @@ import com.llamalad7.mixinextras.sugar.Local;
 import dev.romoslayer.daybreak.light.RegionalLight;
 import dev.romoslayer.daybreak.sleep.SiegeClock;
 import dev.romoslayer.daybreak.time.RegionalTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
 import net.minecraft.core.Holder;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.clock.ClockTimeMarker;
 import net.minecraft.world.clock.ClockTimeMarkers;
 import net.minecraft.world.clock.ServerClockManager;
 import net.minecraft.world.clock.WorldClock;
 import net.minecraft.world.entity.ai.village.VillageSiege;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 
 /**
- * Zombie sieges. Vanilla rolls once a night at the world clock's midnight and only while the level is dark. With regional
- * time a roll happens whenever a player's local time passes midnight, the siege may run while any player is in local
- * night, and it is set up only around players who are in local night.
+ * Zombie sieges with regional time (rules in SiegeClock). Vanilla's tick asks "is it bright outside?", "is the clock at
+ * the siege roll marker?" (midnight), rolls 1 in 10 and sets the siege up around a player; each of those is answered
+ * here for the regions.
  */
 @Mixin(VillageSiege.class)
-abstract class VillageSiegeMixin {
+abstract class VillageSiegeMixin implements SiegeClock.Status {
+	@Shadow
+	private boolean hasSetupSiege;
+	@Shadow
+	private int zombiesToSpawn;
+	@Shadow
+	private int nextSpawnTime;
+	@Shadow
+	private int spawnX;
+	@Shadow
+	private int spawnY;
+	@Shadow
+	private int spawnZ;
+
+	/** The last roll succeeded and the siege is not set up yet. */
+	@Unique
+	private boolean daybreak$won;
+	/** Players who passed midnight while a siege was running: roll for them once it is over. */
+	@Unique
+	private final Set<UUID> daybreak$queued = new HashSet<>();
+	/** The players whose midnight the current attempt was rolled for: it besieges a village around one of them. */
+	@Unique
+	private final Set<UUID> daybreak$rollers = new HashSet<>();
+	/** End the current attempt on the next tick (a won roll with no village to besiege). */
+	@Unique
+	private boolean daybreak$end;
+
+	@Unique
+	private boolean daybreak$running() {
+		return this.hasSetupSiege && this.zombiesToSpawn > 0;
+	}
+
+	/** "Is it bright?": vanilla resets the siege when it is. Bright at the siege's own spot, or everywhere before it is set up. */
 	@WrapOperation(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;isBrightOutside()Z"))
-	private boolean daybreak$brightEverywhere(ServerLevel level, Operation<Boolean> original) {
+	private boolean daybreak$dayForTheSiege(ServerLevel level, Operation<Boolean> original) {
 		if (!RegionalTime.isRegional(level)) {
 			return original.call(level);
 		}
-		return level.players().stream().noneMatch(p -> !RegionalLight.isBright(level, p.getX(), p.getY(), p.getZ()));
+		SiegeClock.ticked(level, this);
+		boolean day = this.daybreak$end
+				|| (this.daybreak$running() ? !SiegeClock.darkAt(level, this.spawnX, this.spawnY, this.spawnZ) : !SiegeClock.anyoneAtNight(level));
+		this.daybreak$end = false;
+		if (day) {
+			this.daybreak$won = false;
+		}
+		return day;
 	}
 
+	/** Vanilla rolls at the world's midnight: here, a fresh attempt whenever a player reaches their own midnight. */
 	@WrapOperation(method = "tick", at = @At(value = "INVOKE",
 			target = "Lnet/minecraft/world/clock/ServerClockManager;isAtTimeMarker(Lnet/minecraft/core/Holder;Lnet/minecraft/resources/ResourceKey;)Z"))
 	private boolean daybreak$someonesMidnight(ServerClockManager clocks, Holder<WorldClock> clock, ResourceKey<ClockTimeMarker> marker,
@@ -41,15 +88,65 @@ abstract class VillageSiegeMixin {
 		if (!RegionalTime.isRegional(level) || marker != ClockTimeMarkers.ROLL_VILLAGE_SIEGE) {
 			return original.call(clocks, clock, marker);
 		}
-		return SiegeClock.someoneReachedMidnight(level);
+		Set<UUID> reached = SiegeClock.reachedMidnight(level);
+		if (this.daybreak$running() || (this.daybreak$won && !this.hasSetupSiege)) {
+			this.daybreak$queued.addAll(reached);
+			return false;
+		}
+		if (reached.isEmpty() && this.daybreak$queued.isEmpty()) {
+			return false;
+		}
+		this.daybreak$rollers.clear();
+		this.daybreak$rollers.addAll(reached);
+		this.daybreak$rollers.addAll(this.daybreak$queued);
+		this.daybreak$queued.clear();
+		this.hasSetupSiege = false;
+		this.zombiesToSpawn = 0;
+		this.nextSpawnTime = 0;
+		return true;
 	}
 
+	/** The 1-in-10 roll itself (the only random number vanilla's tick draws). */
+	@WrapOperation(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/util/RandomSource;nextInt(I)I"))
+	private int daybreak$roll(RandomSource random, int bound, Operation<Integer> original, @Local(argsOnly = true) ServerLevel level) {
+		int result = original.call(random, bound);
+		if (RegionalTime.isRegional(level)) {
+			if (SiegeClock.forceWin()) {
+				result = 0;
+			}
+			this.daybreak$won = result == 0;
+		}
+		return result;
+	}
+
+	/** A won roll that finds no village around its players at night is over, rather than waiting and blocking later rolls. */
+	@WrapOperation(method = "tick", at = @At(value = "INVOKE",
+			target = "Lnet/minecraft/world/entity/ai/village/VillageSiege;tryToSetupSiege(Lnet/minecraft/server/level/ServerLevel;)Z"))
+	private boolean daybreak$setUpOrGiveUp(VillageSiege siege, ServerLevel level, Operation<Boolean> original) {
+		boolean setUp = original.call(siege, level);
+		if (RegionalTime.isRegional(level)) {
+			this.daybreak$won = false;
+			if (!setUp) {
+				this.daybreak$end = true;
+			}
+		}
+		return setUp;
+	}
+
+	/** The siege is set up only around the players whose midnight it was rolled for, if they are still in local night. */
 	@WrapOperation(method = "tryToSetupSiege", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;players()Ljava/util/List;"))
 	private List<ServerPlayer> daybreak$playersAtNight(ServerLevel level, Operation<List<ServerPlayer>> original) {
 		List<ServerPlayer> players = original.call(level);
 		if (!RegionalTime.isRegional(level)) {
 			return players;
 		}
-		return players.stream().filter(p -> !RegionalLight.isBright(level, p.getX(), p.getY(), p.getZ())).toList();
+		return players.stream().filter(p -> !p.isSpectator() && this.daybreak$rollers.contains(p.getUUID())
+				&& !RegionalLight.isBright(level, p.getX(), p.getY(), p.getZ())).toList();
+	}
+
+	@Override
+	public String daybreak$status() {
+		return String.format(Locale.ROOT, "setUp=%s zombiesLeft=%d won=%s queued=%d rollers=%d spawn=%d,%d,%d", this.hasSetupSiege,
+				this.zombiesToSpawn, this.daybreak$won, this.daybreak$queued.size(), this.daybreak$rollers.size(), this.spawnX, this.spawnY, this.spawnZ);
 	}
 }

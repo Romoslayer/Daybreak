@@ -25,20 +25,30 @@ import org.jspecify.annotations.Nullable;
  * <p>
  * Seasonal day length cannot be sent as a speed here: such a client keeps running one tick per tick, and the regular
  * resends keep it on time.
+ * <p>
+ * NeoForge 21.1 sends players who have NeoForge its own time packet instead, which also carries the day time's speed
+ * (other mods can change it); a TimePacketAdapter lets this class read, rewrite and resend that packet the same way.
  */
 public final class ClientTime {
-	/** A loader's own time packet (NeoForge's for NeoForge clients): how to read it and rebuild it with another day time. */
+	/** A time packet's contents: day time (never negative here), whether it runs, and how many ticks it runs per tick. */
+	public record TimePacket(long gameTime, long dayTime, boolean ticking, double rate) {
+	}
+
+	/** A loader's own time packet (NeoForge's for NeoForge clients): reading it, rewriting it, and sending a fresh one. */
 	public interface TimePacketAdapter {
-		/** The packet's (game time, day time, ticking) if it is one of this loader's time packets, else null. */
-		long @Nullable [] read(Packet<?> packet);
+		/** The packet's contents if it is one of this loader's time packets, else null. */
+		@Nullable TimePacket read(Packet<?> packet);
 
 		Packet<?> withDayTime(Packet<?> packet, long dayTime);
+
+		/** A fresh time packet of this loader's kind for this player (if they use it), with the level's world time; else null. */
+		@Nullable Packet<?> fresh(ServerPlayer player, ServerLevel level);
 	}
 
 	/** The clock a player's client is running, as last sent: enough to predict what it shows now. */
-	private record Sent(boolean regional, long clock, boolean ticking, long gameTime) {
+	private record Sent(boolean regional, long clock, boolean ticking, double rate, long gameTime) {
 		long predicted(long gameTimeNow) {
-			return this.ticking ? this.clock + (gameTimeNow - this.gameTime) : this.clock;
+			return this.ticking ? this.clock + (long) Math.floor(this.rate * (gameTimeNow - this.gameTime)) : this.clock;
 		}
 	}
 
@@ -57,13 +67,13 @@ public final class ClientTime {
 			long dayTime = time.getDayTime();
 			// Negative day times mean a stopped cycle (vanilla sends -1 for a cycle stopped at 0)
 			boolean ticking = dayTime >= 0;
-			long local = local(player, time.getGameTime(), ticking ? dayTime : dayTime == -1 ? 0 : -dayTime, ticking);
+			long local = local(player, new TimePacket(time.getGameTime(), ticking ? dayTime : dayTime == -1 ? 0 : -dayTime, ticking, 1.0));
 			return local == Long.MIN_VALUE ? packet : new ClientboundSetTimePacket(time.getGameTime(), local, ticking);
 		}
 		for (TimePacketAdapter adapter : ADAPTERS) {
-			long[] read = adapter.read(packet);
+			TimePacket read = adapter.read(packet);
 			if (read != null) {
-				long local = local(player, read[0], read[1], read[2] != 0);
+				long local = local(player, read);
 				return local == Long.MIN_VALUE ? packet : adapter.withDayTime(packet, local);
 			}
 		}
@@ -71,14 +81,14 @@ public final class ClientTime {
 	}
 
 	/** Records what the player's client will run and returns the day time to send them, or MIN_VALUE to send it as is. */
-	private static long local(ServerPlayer player, long gameTime, long worldDayTime, boolean ticking) {
+	private static long local(ServerPlayer player, TimePacket time) {
 		ServerLevel level = Versioned.level(player);
 		if (!RegionalTime.isRegional(level)) {
-			SENT.put(player.getUUID(), new Sent(false, worldDayTime, ticking, gameTime));
+			SENT.put(player.getUUID(), new Sent(false, time.dayTime(), time.ticking(), time.rate(), time.gameTime()));
 			return Long.MIN_VALUE;
 		}
-		long solar = RegionalTime.solarClock(worldDayTime, player.getX());
-		SENT.put(player.getUUID(), new Sent(true, solar, ticking, gameTime));
+		long solar = RegionalTime.solarClock(time.dayTime(), player.getX());
+		SENT.put(player.getUUID(), new Sent(true, solar, time.ticking(), time.rate(), time.gameTime()));
 		return RegionalTime.clientClock(solar);
 	}
 
@@ -95,8 +105,13 @@ public final class ClientTime {
 				stale = sent.ticking != ticking || Math.abs(sent.predicted(level.getGameTime()) - actual) >= resync;
 			}
 			if (stale) {
-				// Sent as the plain world time; personalize() shifts it like every other time packet
-				player.connection.send(new ClientboundSetTimePacket(level.getGameTime(), level.getDayTime(), ticking));
+				// Sent as the plain world time, in the kind of packet this player gets (a loader's own, or vanilla's);
+				// personalize() shifts it like every other time packet
+				Packet<?> fresh = null;
+				for (TimePacketAdapter adapter : ADAPTERS) {
+					fresh = fresh != null ? fresh : adapter.fresh(player, level);
+				}
+				player.connection.send(fresh != null ? fresh : new ClientboundSetTimePacket(level.getGameTime(), level.getDayTime(), ticking));
 			}
 		}
 		if (server.getTickCount() % 200 == 0) {

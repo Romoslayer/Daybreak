@@ -14,10 +14,11 @@ if (generation == 'mc20') {
 
 if (generation == 'mc20') {
     def forgeModule = rootProject.file('Forge/src')
-    sourceSets.main.java.srcDirs = [new File(forgeModule, 'mc20/java')]
+    sourceSets.main.java.srcDirs = [new File(forgeModule, 'main/java'), new File(forgeModule, 'legacy/java'), new File(forgeModule, 'mc20/java')]
     sourceSets.main.resources.srcDirs = [new File(forgeModule, 'main/resources')]
 
-    def mixinConfigs = "${mod_id}.mixins.json"
+    // The shared mixins and the (Forge) sleep-skip mixin
+    def mixinConfigs = "${mod_id}.mixins.json,${mod_id}.forge.mixins.json"
     def refmap = "${mod_id}.refmap.json"
 
     legacyForge {
@@ -46,7 +47,7 @@ if (generation == 'mc20') {
     // 1.20.x runs on SRG names, so the mixins need a refmap
     mixin {
         add sourceSets.main, refmap
-        config mixinConfigs
+        mixinConfigs.tokenize(',').each { config it }
     }
 
     dependencies {
@@ -54,6 +55,15 @@ if (generation == 'mc20') {
         // NeoForge 47.1 does not ship MixinExtras, so the jar carries it
         compileOnly(annotationProcessor("io.github.llamalad7:mixinextras-common:${mixinextras_version}"))
         implementation(jarJar("io.github.llamalad7:mixinextras-forge:${mixinextras_version}"))
+        // Dev runs only: other mods' released jars for the live tests (-PtestMods=a.jar,b.jar), turned into the dev
+        // names on the way in (a released 1.20.x jar uses SRG names, which the dev server does not)
+        if (project.hasProperty('testMods')) {
+            project.property('testMods').tokenize(',').each { path ->
+                def jar = file(path)
+                repositories { flatDir { dirs jar.parentFile } }
+                modRuntimeOnly "local.testmods:${jar.name - '.jar'}"
+            }
+        }
     }
 
     processResources {
@@ -66,8 +76,8 @@ if (generation == 'mc20') {
             expand(forgeProps + [version: project.version.toString(), mod_id: mod_id, mod_name: mod_name, mod_author: mod_author,
                                  mod_description: mod_description, license: license])
         }
-        // Point the mixin config at the refmap the annotation processor writes
-        filesMatching(mixinConfigs) {
+        // Point the mixin configs at the refmap the annotation processor writes
+        filesMatching(mixinConfigs.tokenize(',')) {
             filter { it.replace('"package":', "\"refmap\": \"${refmap}\",\n\t\"package\":") }
         }
     }

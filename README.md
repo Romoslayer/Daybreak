@@ -19,7 +19,7 @@ running through its own normal day and night.
 | **Beds** | A bed works when it is night (or storming) where it stands. |
 | **Daylight detectors** | Follow the local sun. |
 | **Mobs and villagers** | Every behaviour that depends on day or night (villager schedules, bees, foxes, endermen, drowned, creaking hearts, eyeblossoms, cats' morning gifts) follows the local time, for modded mobs too. |
-| **Phantoms, patrols, sieges** | Phantoms come at local night, pillager patrols by local day, and a village can be sieged at its own midnight. |
+| **Phantoms, patrols, sieges** | Phantoms come at local night and pillager patrols by local day. Zombie sieges are rolled when a player reaches their own local midnight (once per player and night) and come to a village around that player; a siege runs while its own spot is dark, and one player's midnight never cuts short a siege going on elsewhere. |
 
 Unchanged: the tick rate, redstone, crops, furnaces, world age, seasons and weather. The Nether and the End keep their
 normal time (other dimensions can be added in the config).
@@ -37,6 +37,8 @@ There is one world clock, so skipping a night moves it for everyone. Daybreak's 
 - After a skip, another one has to wait 10 minutes of normal time (`sleepSkipCooldownTicks`), so a player cannot
   skip, travel west to where it is night again and skip again to race the clock ahead.
 - `allowSleepSkip: false` in the config: beds never skip the night.
+- On Forge (every version) and NeoForge 1.21.1, the skip still goes through the loader's sleep-finished event: other
+  mods' listeners are told and can still move the time later. The cooldown only starts if the clock actually moves.
 
 ## Settings
 
@@ -53,7 +55,12 @@ There is one world clock, so skipping a night moves it for everyone. Daybreak's 
 | `resyncTicks` | `20` | how far a player's sky may drift before their time is resent |
 | `seasonalDayLength` | `true` | use Seasonfall's seasonal day length per place |
 | `enhancedCelestials` | `true` | regional lunar events with Enhanced Celestials |
-| `debug` | `false` | extra logging |
+| `debug` | `false` | extra logging: why nights are or are not skipped, and village siege rolls |
+
+Each option is read on its own: a value of the wrong kind or out of range falls back to its default with a warning, and
+the rest of the file still applies. A file that is not JSON at all is rejected as a whole (`/daybreak reload` then keeps
+the settings already running). `/daybreak info` shows the dimensions running now, and the file's list if a restart is
+still needed for it.
 
 With small `blocksPerDay` values (a few thousand blocks or less), the time changes noticeably within a player's view
 distance: monsters at the edge of the view follow a different time than the player's own sky.
@@ -67,9 +74,14 @@ the time a player's game is showing, `/daybreak reload`.
   seasonally longer or shorter day; with older versions, switch Seasonfall's day length off.
 - **Stormcell**: works alongside; storms over a player count as night for sleeping.
 - **Enhanced Celestials 2** (Minecraft 26.x): lunar events are still decided once for the whole world, and each place
-  gets the night's event during its own night, so a blood moon sweeps from east to west. If a future Enhanced Celestials
-  version changes what Daybreak hooks into, Daybreak leaves its lunar events global instead of breaking anything.
-- **Geyser**: Bedrock players should see their local time the same way (Geyser passes each player's time on).
+  gets the night's event during its own night, so a blood moon sweeps from east to west. Places a whole lunar year ahead
+  of the world (far out, or with small `blocksPerDay` values) get the events of their own year, rolled the same way
+  Enhanced Celestials rolls the world's; places whose local time is still before the world's first day have none yet.
+  If a future Enhanced Celestials version changes what Daybreak hooks into, Daybreak leaves its lunar events global
+  instead of breaking anything.
+- **Geyser**: Bedrock players should see their local time the same way (Geyser passes each player's time on). The time
+  Daybreak sends always fits a 32-bit number, even far out with very small `blocksPerDay` values. Not yet tested with a
+  Bedrock client.
 - Other mods: anything that checks the light or day/night at a position, or from a mob's own tick, follows the local
   time automatically.
 
@@ -89,7 +101,9 @@ are kept on their local time by the server's regular time updates (26.x clients 
 ## API
 
 `dev.romoslayer.daybreak.api.DaybreakApi` (call directly or by reflection): `isRegional(level)`, `offsetTicks(level, x)`,
-`localClock(level, x)`, `localTimeOfDay(level, x)`, `localDay(level, x)`.
+`localClock(level, x)`, `localTimeOfDay(level, x)`, `localDay(level, x)`, and `localSolarClock(level, x)`,
+`localSolarTimeOfDay(level, x)`. The local clock runs evenly; the solar clock is what the sky, light and mobs follow, and
+differs from it only with Seasonfall's seasonal day length (longer days in summer, shorter in winter).
 
 ## Building
 

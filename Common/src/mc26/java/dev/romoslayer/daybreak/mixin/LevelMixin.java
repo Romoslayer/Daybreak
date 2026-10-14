@@ -20,26 +20,44 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * light predicates read, so no stored light ever changes.
  */
 @Mixin(Level.class)
-abstract class LevelMixin implements RegionalContext, RegionalLight.Holder {
+abstract class LevelMixin implements RegionalContext, RegionalLight.Holder, RegionalTime.Cached {
 	@Unique
 	private @Nullable Vec3 daybreak$context;
+
+	/** The thread that set the context: code on any other thread (a mod's own worker) never sees it. */
+	@Unique
+	private @Nullable Thread daybreak$contextThread;
 
 	@Unique
 	private final RegionalLight.Cache daybreak$lightCache = new RegionalLight.Cache();
 
 	@Override
 	public @Nullable Vec3 daybreak$context() {
-		return this.daybreak$context;
+		return Thread.currentThread() == this.daybreak$contextThread ? this.daybreak$context : null;
 	}
 
 	@Override
 	public void daybreak$setContext(@Nullable Vec3 pos) {
 		this.daybreak$context = pos;
+		this.daybreak$contextThread = pos == null ? null : Thread.currentThread();
 	}
 
 	@Override
 	public RegionalLight.Cache daybreak$lightCache() {
 		return this.daybreak$lightCache;
+	}
+
+	@Unique
+	private RegionalTime.@Nullable State daybreak$regionalState;
+
+	@Override
+	public RegionalTime.@Nullable State daybreak$regionalState() {
+		return this.daybreak$regionalState;
+	}
+
+	@Override
+	public void daybreak$setRegionalState(RegionalTime.State state) {
+		this.daybreak$regionalState = state;
 	}
 
 	/** Overrides LevelReader#getMaxLocalRawBrightness(BlockPos). */

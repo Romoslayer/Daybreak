@@ -23,6 +23,8 @@ public final class RegionalTime {
 	public static final long DAY_TICKS = 24000L;
 	/** One full moon cycle (8 days): adding it changes neither the time of day nor the moon phase. */
 	public static final long MOON_CYCLE_TICKS = 8L * DAY_TICKS;
+	/** The largest clock sent to clients: the largest signed 32-bit number. */
+	public static final long CLIENT_CLOCK_LIMIT = Integer.MAX_VALUE;
 	/** Dimension ids as text, made once per dimension: isRegional is asked on every light read. */
 	private static final Map<ResourceKey<Level>, String> IDS = new ConcurrentHashMap<>();
 
@@ -59,25 +61,57 @@ public final class RegionalTime {
 	}
 
 	/**
-	 * The clock value to send a client: the same time of day and moon phase, moved up by whole moon cycles if needed
-	 * so it is never negative (Bedrock players through Geyser get the time as a 32-bit number).
+	 * The clock value to send a client: the same time of day and moon phase, moved by whole moon cycles if needed so it
+	 * stays from 0 to CLIENT_CLOCK_LIMIT (Bedrock players through Geyser get the time as a 32-bit number). Clocks in that
+	 * range, which is everything up to about 89 000 days, are sent unchanged.
 	 */
 	public static long clientClock(long localClock) {
-		if (localClock >= 0) {
-			return localClock;
+		if (localClock < 0) {
+			long cycles = -Math.floorDiv(localClock, MOON_CYCLE_TICKS);
+			return localClock + cycles * MOON_CYCLE_TICKS;
 		}
-		long cycles = -Math.floorDiv(localClock, MOON_CYCLE_TICKS);
-		return localClock + cycles * MOON_CYCLE_TICKS;
+		if (localClock > CLIENT_CLOCK_LIMIT) {
+			long cycles = Math.floorDiv(localClock - CLIENT_CLOCK_LIMIT - 1, MOON_CYCLE_TICKS) + 1;
+			return localClock - cycles * MOON_CYCLE_TICKS;
+		}
+		return localClock;
 	}
 
 	/** Whether this level has regional time: a server level of a configured dimension, with Daybreak enabled. */
 	public static boolean isRegional(@Nullable Level level) {
-		return level instanceof ServerLevel serverLevel && DaybreakConfig.get().isRegional(id(serverLevel));
+		return level instanceof ServerLevel serverLevel && state(serverLevel).regional();
 	}
 
 	/** Whether this server level's dimension is configured for regional time, even while Daybreak is disabled. */
 	public static boolean isListed(@Nullable Level level) {
-		return level instanceof ServerLevel serverLevel && DaybreakConfig.get().isListed(id(serverLevel));
+		return level instanceof ServerLevel serverLevel && state(serverLevel).listed();
+	}
+
+	/**
+	 * Added to Level (LevelMixin): its answers to isRegional and isListed, kept with the config generation they were
+	 * worked out for. They are asked on every light read and context, and looking the dimension up each time showed in
+	 * profiles.
+	 */
+	public interface Cached {
+		@Nullable State daybreak$regionalState();
+
+		void daybreak$setRegionalState(State state);
+	}
+
+	public record State(int generation, boolean regional, boolean listed) {
+	}
+
+	private static State state(ServerLevel level) {
+		int generation = DaybreakConfig.generation();
+		Cached cached = (Cached) level;
+		State state = cached.daybreak$regionalState();
+		if (state == null || state.generation() != generation) {
+			DaybreakConfig config = DaybreakConfig.get();
+			String id = id(level);
+			state = new State(generation, config.isRegional(id), config.isListed(id));
+			cached.daybreak$setRegionalState(state);
+		}
+		return state;
 	}
 
 	/** The level's world clock: the time of day vanilla runs on, never shifted by Daybreak. */

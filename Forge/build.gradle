@@ -16,8 +16,8 @@ if (generation == 'mc20') {
 
 // "26.3-66.0.9" -> "66", "1.21.1-52.1.16" -> "52": the Forge major version, which mods.toml's ranges use
 def forgeMajor = forge_version.tokenize('-')[1].tokenize('.')[0]
-// Enhanced Celestials 2 support and the Forge sleep-skip mixin are 26.x only
-def mixinConfigs = generation == 'mc26' ? "${mod_id}.mixins.json,${mod_id}.forge.mixins.json,${mod_id}.ec2.mixins.json" : "${mod_id}.mixins.json"
+// The shared mixins, Forge's sleep-skip mixin, and Enhanced Celestials 2 support (26.x only)
+def mixinConfigs = "${mod_id}.mixins.json,${mod_id}.forge.mixins.json" + (generation == 'mc26' ? ",${mod_id}.ec2.mixins.json" : '')
 def refmap = "${mod_id}.refmap.json"
 
 if (generation == 'mc20') {
@@ -47,7 +47,7 @@ if (generation == 'mc20') {
     // Forge 1.20.x runs on SRG names, so the mixins need a refmap
     mixin {
         add sourceSets.main, refmap
-        config mixinConfigs
+        mixinConfigs.tokenize(',').each { config it }
     }
 
     dependencies {
@@ -55,6 +55,15 @@ if (generation == 'mc20') {
         // Forge 1.20.x does not ship MixinExtras, so the jar carries it
         compileOnly(annotationProcessor("io.github.llamalad7:mixinextras-common:${mixinextras_version}"))
         implementation(jarJar("io.github.llamalad7:mixinextras-forge:${mixinextras_version}"))
+        // Dev runs only: other mods' released jars for the live tests (-PtestMods=a.jar,b.jar), turned into the dev
+        // names on the way in (a released 1.20.x jar uses SRG names, which the dev server does not)
+        if (project.hasProperty('testMods')) {
+            project.property('testMods').tokenize(',').each { path ->
+                def jar = file(path)
+                repositories { flatDir { dirs jar.parentFile } }
+                modRuntimeOnly "local.testmods:${jar.name - '.jar'}"
+            }
+        }
     }
 } else {
     minecraft {
@@ -114,8 +123,8 @@ processResources {
                              mod_description: mod_description, license: license])
     }
     if (generation == 'mc20') {
-        // Point the mixin config at the refmap the annotation processor writes
-        filesMatching("${mod_id}.mixins.json") {
+        // Point the mixin configs at the refmap the annotation processor writes
+        filesMatching(mixinConfigs.tokenize(',')) {
             filter { it.replace('"package":', "\"refmap\": \"${refmap}\",\n\t\"package\":") }
         }
     }

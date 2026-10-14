@@ -1,5 +1,6 @@
 package dev.romoslayer.daybreak.sleep;
 
+import dev.romoslayer.daybreak.Daybreak;
 import dev.romoslayer.daybreak.config.DaybreakConfig;
 import dev.romoslayer.daybreak.context.RegionalContext;
 import dev.romoslayer.daybreak.mc.Versioned;
@@ -33,12 +34,16 @@ public final class SleepRules {
 	public static final long NIGHT_START = 12542L;
 	public static final long NIGHT_END = 23460L;
 	private static final int NOTE_INTERVAL = 100;
-	private static long lastNote = Long.MIN_VALUE / 2;
+	/** The last "can't skip" note per level: sent again every few seconds, or at once when the reason changes. */
+	private static final Map<ServerLevel, Note> NOTES = new WeakHashMap<>();
 	/** Game time (real ticks, which skips do not move) of the last night skip, per loaded level (a new world starts afresh). */
 	private static final Map<ServerLevel, Long> LAST_SKIP = new WeakHashMap<>();
 
 	/** Things that keep anyone from skipping, with the reason shown to sleepers (Enhanced Celestials adds one). */
 	private static final List<Function<ServerPlayer, @Nullable String>> BLOCKERS = new ArrayList<>();
+
+	private record Note(long time, String reason) {
+	}
 
 	private SleepRules() {
 	}
@@ -54,9 +59,15 @@ public final class SleepRules {
 		}
 		String reason = blockingReason(level);
 		long now = level.getGameTime();
-		// Right away when the skip is first held back, then every few seconds while it stays that way
-		if (reason != null && (now - lastNote >= NOTE_INTERVAL || now < lastNote)) {
-			lastNote = now;
+		Note last = NOTES.get(level);
+		if (reason == null) {
+			NOTES.remove(level);
+		} else if (last == null || !last.reason().equals(reason) || now - last.time() >= NOTE_INTERVAL || now < last.time()) {
+			// Right away when the skip is first held back or the reason changes, then every few seconds while it stays so
+			if (last == null || !last.reason().equals(reason)) {
+				Daybreak.debug("{}: enough players asleep, but the night can't be skipped: {}", level.dimension(), reason);
+			}
+			NOTES.put(level, new Note(now, reason));
 			Component note = note(reason);
 			for (ServerPlayer player : level.players()) {
 				if (player.isSleeping()) {
@@ -108,16 +119,24 @@ public final class SleepRules {
 	/**
 	 * The night ends: how many ticks the clock moves, until the sleeper furthest from morning reaches local 6 AM, or
 	 * 0 when any sleeper is only sleeping because of a storm. A skip that moves the clock starts the skip cooldown.
+	 * Where the loader's sleep event may still change the time, use skipTicks, then skipped once the clock has moved.
 	 */
 	public static long endNight(ServerLevel level) {
 		long skip = skipTicks(level);
 		if (skip > 0) {
-			LAST_SKIP.put(level, level.getGameTime());
+			skipped(level);
 		}
 		return skip;
 	}
 
-	static long skipTicks(ServerLevel level) {
+	/** The clock has moved to end a night: starts the skip cooldown. */
+	public static void skipped(ServerLevel level) {
+		LAST_SKIP.put(level, level.getGameTime());
+		Daybreak.debug("{}: night skipped; the next skip can come after {} ticks", level.dimension(), DaybreakConfig.get().sleepSkipCooldownTicks);
+	}
+
+	/** How many ticks the clock should move to end the night (see endNight), without starting the cooldown. */
+	public static long skipTicks(ServerLevel level) {
 		long world = RegionalTime.worldClock(level);
 		long skip = 0;
 		for (ServerPlayer player : level.players()) {

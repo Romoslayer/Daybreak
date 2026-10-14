@@ -28,13 +28,28 @@ public final class Daybreak {
 				config.direction == DaybreakConfig.Direction.EAST_LATER ? "east" : "west", config.dimensions);
 		Versioned.initCompat();
 		dev.romoslayer.daybreak.compat.seasonfall.SeasonfallBridge.init();
-		if (Boolean.getBoolean("daybreak.testHarness")) {
-			// Dev servers only: the harness package is not in the release jars
-			try {
-				Class.forName("dev.romoslayer.daybreak.testharness.TestHarness").getMethod("install").invoke(null);
-			} catch (ReflectiveOperationException e) {
-				LOGGER.error("daybreak.testHarness is set but the test harness is not available", e);
-			}
+		installTestPart("dev.romoslayer.daybreak.testharness.TestHarness");
+	}
+
+	/**
+	 * Dev servers only (-Ddaybreak.testHarness=true): installs a part of the test harness by name. The harness package is
+	 * not in the release jars, so nothing of it is referenced directly; loaders use this for their own test hooks too.
+	 */
+	public static void installTestPart(String className) {
+		if (!Boolean.getBoolean("daybreak.testHarness")) {
+			return;
+		}
+		try {
+			Class.forName(className).getMethod("install").invoke(null);
+		} catch (ReflectiveOperationException e) {
+			LOGGER.error("daybreak.testHarness is set but {} is not available", className, e);
+		}
+	}
+
+	/** Logs only with "debug": true in the config (decisions worth tracing, never anything per tick). */
+	public static void debug(String message, Object... args) {
+		if (DaybreakConfig.get().debug) {
+			LOGGER.info("[debug] " + message, args);
 		}
 	}
 

@@ -44,6 +44,7 @@ public final class TestHarness {
 	public static void install() {
 		Daybreak.LOGGER.warn("Daybreak test harness installed (dev only)");
 		Daybreak.addTicker(Bots::tick);
+		Daybreak.addTicker(TestHarness::runScheduled);
 		DaybreakCommands.addExtension(root -> root.then(Commands.literal("test")
 				.then(Commands.literal("probe").then(xyz(TestHarness::probe)))
 				.then(Commands.literal("bot").then(Commands.argument("name", StringArgumentType.word())
@@ -63,6 +64,33 @@ public final class TestHarness {
 						.then(Commands.argument("z", DoubleArgumentType.doubleArg()).then(Commands.argument("radius", IntegerArgumentType.integer(1))
 								.executes(TestHarness::count)))))
 				.then(Commands.literal("spawncheck").then(Commands.argument("n", IntegerArgumentType.integer(1)).then(xyz(TestHarness::spawnCheck))))
+				.then(Commands.literal("lightread").then(Commands.argument("x", DoubleArgumentType.doubleArg())
+						.then(Commands.argument("y", DoubleArgumentType.doubleArg()).then(Commands.argument("z", DoubleArgumentType.doubleArg())
+								.executes(ctx -> lightRead(ctx, false))
+								.then(Commands.argument("contextX", DoubleArgumentType.doubleArg()).executes(ctx -> lightRead(ctx, true)))))))
+				.then(Commands.literal("block").then(xyz(TestHarness::block)))
+				.then(Commands.literal("capture").then(Commands.argument("label", StringArgumentType.word()).then(Commands.argument("command", StringArgumentType.greedyString())
+						.executes(TestHarness::capture))))
+				.then(Commands.literal("lightexact").then(Commands.argument("x0", IntegerArgumentType.integer()).then(Commands.argument("x1", IntegerArgumentType.integer())
+						.executes(TestHarness::lightExact))))
+				.then(Commands.literal("ctxbench").then(Commands.argument("n", IntegerArgumentType.integer(1)).executes(TestHarness::ctxBench)))
+				.then(Commands.literal("claim").then(xyz(TestHarness::claim)))
+				.then(Commands.literal("contextsafety").executes(TestHarness::contextSafety))
+				.then(Commands.literal("activity").then(Commands.argument("name", StringArgumentType.word()).executes(TestHarness::activity)))
+				.then(Commands.literal("later").then(Commands.argument("ticks", IntegerArgumentType.integer(1))
+						.then(Commands.argument("command", StringArgumentType.greedyString()).executes(TestHarness::schedule))))
+				.then(Commands.literal("ec2schedule").then(Commands.argument("label", StringArgumentType.word()).executes(TestHarness::ec2Schedule)))
+				.then(Commands.literal("ec2years").then(Commands.argument("label", StringArgumentType.word()).then(Commands.argument("x", DoubleArgumentType.doubleArg())
+						.executes(TestHarness::ec2Years))))
+				.then(Commands.literal("siege").then(Commands.argument("label", StringArgumentType.word()).executes(ctx -> reply(ctx,
+						"siege " + StringArgumentType.getString(ctx, "label") + " " + dev.romoslayer.daybreak.sleep.SiegeClock.status(overworld(ctx))))))
+				.then(Commands.literal("siegeforce").then(Commands.literal("on").executes(ctx -> {
+					dev.romoslayer.daybreak.sleep.SiegeClock.setForceWin(true);
+					return reply(ctx, "siege rolls always succeed");
+				})).then(Commands.literal("off").executes(ctx -> {
+					dev.romoslayer.daybreak.sleep.SiegeClock.setForceWin(false);
+					return reply(ctx, "siege rolls normal");
+				})))
 				.then(Commands.literal("sleep").then(Commands.argument("name", StringArgumentType.word()).then(xyz(TestHarness::sleep))))
 				.then(Commands.literal("bench").then(Commands.argument("n", IntegerArgumentType.integer(1)).executes(TestHarness::bench)))
 				.then(Commands.literal("stats").executes(TestHarness::stats))
@@ -337,6 +365,275 @@ public final class TestHarness {
 		}
 		return reply(ctx, String.format(Locale.ROOT, "spawncheck x=%d y=%d z=%d local=%d n=%d zombieRulesPass=%d darkEnough=%d", pos.getX(), pos.getY(),
 				pos.getZ(), local(level, pos.getX()), n, pass, dark));
+	}
+
+	/**
+	 * Light at a position: read with no context, and (when a context x is given) from code running somewhere else. The
+	 * two-argument read with an explicit darkening of 10 (vanilla's thunderstorm spawning) must not change.
+	 */
+	private static int lightRead(CommandContext<CommandSourceStack> ctx, boolean withContext) {
+		ServerLevel level = overworld(ctx);
+		BlockPos pos = pos(ctx);
+		int bare = level.getMaxLocalRawBrightness(pos);
+		int explicit = level.getMaxLocalRawBrightness(pos, 10);
+		String inContext = "-";
+		if (withContext) {
+			double cx = DoubleArgumentType.getDouble(ctx, "contextX");
+			inContext = Integer.toString(RegionalContext.with(level, new Vec3(cx, pos.getY() + 0.5, pos.getZ() + 0.5), () -> level.getMaxLocalRawBrightness(pos)));
+		}
+		return reply(ctx, String.format(Locale.ROOT, "lightread x=%d local=%d rawMax=%d inContext=%s explicit10=%d storedSky=%d", pos.getX(),
+				local(level, pos.getX() + 0.5), bare, inContext, explicit, level.getBrightness(LightLayer.SKY, pos)));
+	}
+
+	/**
+	 * Enhanced Celestials' scheduled events around now: start times next to the world clock (EC2's own forecast text only
+	 * says "in 0d"). Labelled, so a test can tell several readings apart. Read by reflection: EC2 is closed source and
+	 * only stand-ins are on the compile classpath.
+	 */
+	private static int ec2Schedule(CommandContext<CommandSourceStack> ctx) {
+		ServerLevel level = overworld(ctx);
+		String label = StringArgumentType.getString(ctx, "label");
+		try {
+			Object forecast = dev.corgitaco.enhancedcelestials2core.EnhancedCelestials.lunarForecastWorldData(level).orElse(null);
+			if (forecast == null) {
+				return reply(ctx, "ec2schedule " + label + " no forecast");
+			}
+			java.lang.reflect.Field byYear = forecast.getClass().getDeclaredField("lunarEventsByYear");
+			byYear.setAccessible(true);
+			long world = RegionalTime.worldClock(level);
+			StringBuilder out = new StringBuilder(String.format(Locale.ROOT, "ec2schedule %s worldClock=%d", label, world));
+			for (Object events : ((Map<?, ?>) byYear.get(forecast)).values()) {
+				for (Object event : (java.util.List<?>) events) {
+					java.lang.reflect.Method startTime = event.getClass().getDeclaredMethod("startTime");
+					java.lang.reflect.Method lunarEvent = event.getClass().getDeclaredMethod("lunarEvent");
+					startTime.setAccessible(true);
+					lunarEvent.setAccessible(true);
+					long start = (long) startTime.invoke(event);
+					if (Math.abs(start - world) < RegionalTime.DAY_TICKS) {
+						Object holder = lunarEvent.invoke(event);
+						String name = holder instanceof net.minecraft.core.Holder<?> h ? h.unwrapKey().map(k -> k.identifier().getPath()).orElse("?") : "?";
+						out.append(String.format(Locale.ROOT, " | event=%s start=%d", name, start));
+					}
+				}
+			}
+			return reply(ctx, out.toString());
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+			return reply(ctx, "ec2schedule " + label + " unavailable: " + e);
+		}
+	}
+
+	/**
+	 * The years of lunar events EC2 holds, the local year at x, and the first scheduled event from x's local time on (on
+	 * x's local clock), so a test can move the clock into it. Read by reflection like ec2schedule.
+	 */
+	private static int ec2Years(CommandContext<CommandSourceStack> ctx) {
+		ServerLevel level = overworld(ctx);
+		String label = StringArgumentType.getString(ctx, "label");
+		double x = DoubleArgumentType.getDouble(ctx, "x");
+		try {
+			Object forecast = dev.corgitaco.enhancedcelestials2core.EnhancedCelestials.lunarForecastWorldData(level).orElse(null);
+			if (forecast == null) {
+				return reply(ctx, "ec2years " + label + " no forecast");
+			}
+			java.lang.reflect.Field byYear = forecast.getClass().getDeclaredField("lunarEventsByYear");
+			byYear.setAccessible(true);
+			Map<?, ?> years = (Map<?, ?>) byYear.get(forecast);
+			long world = RegionalTime.worldClock(level);
+			long local = RegionalTime.solarClock(world, x);
+			long localYear = Math.floorDiv(local, ((dev.romoslayer.daybreak.compat.ec2.Ec2Years) forecast).daybreak$yearTicks());
+			String next = "none";
+			long nextStart = Long.MAX_VALUE;
+			for (Object events : years.values()) {
+				for (Object event : (java.util.List<?>) events) {
+					java.lang.reflect.Method startTime = event.getClass().getDeclaredMethod("startTime");
+					java.lang.reflect.Method lunarEvent = event.getClass().getDeclaredMethod("lunarEvent");
+					startTime.setAccessible(true);
+					lunarEvent.setAccessible(true);
+					long start = (long) startTime.invoke(event);
+					if (start >= local && start < nextStart) {
+						Object holder = lunarEvent.invoke(event);
+						nextStart = start;
+						next = holder instanceof net.minecraft.core.Holder<?> h ? h.unwrapKey().map(k -> k.identifier().getPath()).orElse("?") : "?";
+					}
+				}
+			}
+			String kept = years.keySet().stream().map(k -> ((Number) k).longValue()).sorted().map(String::valueOf).collect(java.util.stream.Collectors.joining(","));
+			return reply(ctx, String.format(Locale.ROOT, "ec2years %s x=%.0f world=%d local=%d localYear=%d years=%s next=%s start=%d", label, x, world, local,
+					localYear, kept, next, nextStart == Long.MAX_VALUE ? -1 : nextStart));
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+			return reply(ctx, "ec2years " + label + " unavailable: " + e);
+		}
+	}
+
+	/** A server command to run a number of ticks from now (scenarios that need exact timing, which RCON cannot give). */
+	private record Scheduled(int at, String command) {
+	}
+
+	private static final java.util.List<Scheduled> SCHEDULED = new java.util.ArrayList<>();
+
+	private static int schedule(CommandContext<CommandSourceStack> ctx) {
+		int at = ctx.getSource().getServer().getTickCount() + IntegerArgumentType.getInteger(ctx, "ticks");
+		SCHEDULED.add(new Scheduled(at, StringArgumentType.getString(ctx, "command")));
+		return reply(ctx, "later at tick " + at);
+	}
+
+	private static void runScheduled(net.minecraft.server.MinecraftServer server) {
+		for (Scheduled due : java.util.List.copyOf(SCHEDULED)) {
+			if (server.getTickCount() >= due.at()) {
+				SCHEDULED.remove(due);
+				server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), due.command());
+			}
+		}
+	}
+
+	/**
+	 * Contexts come back even when the code run inside them throws (what the bed and tick wrappers rely on), and nested
+	 * contexts unwind to the outer one.
+	 */
+	private static int contextSafety(CommandContext<CommandSourceStack> ctx) {
+		ServerLevel level = overworld(ctx);
+		Vec3 before = RegionalContext.get(level);
+		try {
+			RegionalContext.with(level, new Vec3(12000.5, -59.5, 0.5), () -> {
+				throw new IllegalStateException("thrown inside a context");
+			});
+		} catch (IllegalStateException expected) {
+			// what a mod catching its own exception would do
+		}
+		Vec3 afterThrow = RegionalContext.get(level);
+		boolean nestedRestored = RegionalContext.with(level, new Vec3(1.5, 0.5, 0.5), () -> {
+			RegionalContext.with(level, new Vec3(2.5, 0.5, 0.5), () -> 0);
+			Vec3 now = RegionalContext.get(level);
+			return now != null && now.x == 1.5;
+		});
+		return reply(ctx, String.format(Locale.ROOT, "contextsafety before=%s afterThrow=%s nestedRestored=%s after=%s", before, afterThrow, nestedRestored,
+				RegionalContext.get(level)));
+	}
+
+	/** What the named mob's brain is doing now (a villager: work, meet, idle or rest), as its own AI decided it. */
+	private static int activity(CommandContext<CommandSourceStack> ctx) {
+		ServerLevel level = overworld(ctx);
+		String name = StringArgumentType.getString(ctx, "name");
+		for (net.minecraft.world.entity.Entity entity : level.getAllEntities()) {
+			if (entity instanceof net.minecraft.world.entity.LivingEntity living && entity.hasCustomName() && name.equals(entity.getCustomName().getString())) {
+				String activity = living.getBrain().getActiveNonCoreActivity().map(a -> a.getName()).orElse("none");
+				return reply(ctx, String.format(Locale.ROOT, "activity %s x=%.0f local=%d %s", name, entity.getX(), local(level, entity.getX()), activity));
+			}
+		}
+		return reply(ctx, "activity " + name + " not found");
+	}
+
+	/**
+	 * Claims the point of interest at a position (a bell, bed or job site) as a villager would. Vanilla counts only claimed
+	 * ones as a village, and villagers of their own would be killed by the very sieges being tested.
+	 */
+	private static int claim(CommandContext<CommandSourceStack> ctx) {
+		ServerLevel level = overworld(ctx);
+		BlockPos pos = pos(ctx);
+		boolean taken = level.getPoiManager().take(type -> true, (type, at) -> at.equals(pos), pos, 1).isPresent();
+		return reply(ctx, String.format(Locale.ROOT, "claim x=%d z=%d %s", pos.getX(), pos.getZ(), taken ? "taken" : "nothing to take"));
+	}
+
+	/**
+	 * Nanoseconds per call (median of 7 timed rounds after 3 warm-up rounds) of the context wrapper and the positional
+	 * light lookup, in a regional dimension (the overworld) and outside one (the Nether): the measurements behind the
+	 * optimisation decisions.
+	 */
+	private static int ctxBench(CommandContext<CommandSourceStack> ctx) {
+		ServerLevel overworld = overworld(ctx);
+		ServerLevel nether = ctx.getSource().getServer().getLevel(net.minecraft.world.level.Level.NETHER);
+		int n = IntegerArgumentType.getInteger(ctx, "n");
+		long[] sink = {0};
+		java.util.function.Supplier<Integer> work = () -> (int) (sink[0] & 1);
+		double bare = nsPerCall(n, i -> sink[0] += work.get());
+		double isRegional = nsPerCall(n, i -> sink[0] += dev.romoslayer.daybreak.time.RegionalTime.isRegional(overworld) ? 1 : 0);
+		double withRegional = nsPerCall(n, i -> sink[0] += RegionalContext.with(overworld, new Vec3(i & 1023, 64, 0), work));
+		double withOther = nsPerCall(n, i -> sink[0] += RegionalContext.with(nether, new Vec3(i & 1023, 64, 0), work));
+		double darkenOneBucket = nsPerCall(n, i -> sink[0] += RegionalLight.skyDarken(overworld, 0.5 + (i & 7), 64, 0.5));
+		double darken64Buckets = nsPerCall(n, i -> sink[0] += RegionalLight.skyDarken(overworld, 0.5 + (i & 63) * 1000, 64, 0.5));
+		double darkenUncached = nsPerCall(n, i -> sink[0] += dev.romoslayer.daybreak.mc.Versioned.skyDarkenAt(overworld, 0.5 + (i & 63) * 1000, 64, 0.5));
+		double darkenOther = nsPerCall(n, i -> sink[0] += RegionalLight.skyDarken(nether, 0.5 + (i & 63) * 1000, 64, 0.5));
+		return reply(ctx, String.format(Locale.ROOT, "ctxbench n=%d bare=%.1f isRegional=%.1f withRegional=%.1f withOther=%.1f darkenOneBucket=%.1f"
+				+ " darken64Buckets=%.1f darkenUncached=%.1f darkenOther=%.1f (sink %d)", n, bare, isRegional, withRegional, withOther, darkenOneBucket,
+				darken64Buckets, darkenUncached, darkenOther, sink[0]));
+	}
+
+	private static double nsPerCall(int n, java.util.function.IntConsumer body) {
+		double[] rounds = new double[7];
+		for (int round = -3; round < rounds.length; round++) {
+			long start = System.nanoTime();
+			for (int i = 0; i < n; i++) {
+				body.accept(i);
+			}
+			if (round >= 0) {
+				rounds[round] = (System.nanoTime() - start) / (double) n;
+			}
+		}
+		java.util.Arrays.sort(rounds);
+		return rounds[rounds.length / 2];
+	}
+
+	/**
+	 * The cached positional darkening against working it out afresh, at every block from x0 to x1 (in one tick, so one
+	 * cache): how many differ, and how many different values the range covers (a whole day has dawn and dusk in it).
+	 */
+	private static int lightExact(CommandContext<CommandSourceStack> ctx) {
+		ServerLevel level = overworld(ctx);
+		int x0 = IntegerArgumentType.getInteger(ctx, "x0");
+		int x1 = IntegerArgumentType.getInteger(ctx, "x1");
+		int mismatches = 0;
+		java.util.BitSet values = new java.util.BitSet();
+		for (int x = x0; x < x1; x++) {
+			int cached = RegionalLight.skyDarken(level, x + 0.5, 64.5, 0.5);
+			int fresh = dev.romoslayer.daybreak.mc.Versioned.skyDarkenAt(level, x + 0.5, 64.5, 0.5);
+			values.set(fresh);
+			if (cached != fresh) {
+				mismatches++;
+			}
+		}
+		return reply(ctx, String.format(Locale.ROOT, "lightexact x0=%d x1=%d checked=%d mismatches=%d values=%d", x0, x1, x1 - x0, mismatches,
+				values.cardinality()));
+	}
+
+	/**
+	 * Runs a command and logs its answers, which otherwise only go to the sender (NeoForge's RCON often returns none), each
+	 * as "capture <label> <text>" with its lines joined by " | ".
+	 */
+	private static int capture(CommandContext<CommandSourceStack> ctx) {
+		String label = StringArgumentType.getString(ctx, "label");
+		String command = StringArgumentType.getString(ctx, "command");
+		// Logged as each answer arrives: since 1.20.3 a command run from inside another one only runs once that one is done
+		net.minecraft.commands.CommandSource sink = new net.minecraft.commands.CommandSource() {
+			@Override
+			public void sendSystemMessage(Component message) {
+				Daybreak.LOGGER.info("[test] capture {} {}", label, message.getString().replace("\n", " | "));
+			}
+
+			@Override
+			public boolean acceptsSuccess() {
+				return true;
+			}
+
+			@Override
+			public boolean acceptsFailure() {
+				return true;
+			}
+
+			@Override
+			public boolean shouldInformAdmins() {
+				return false;
+			}
+		};
+		ctx.getSource().getServer().getCommands().performPrefixedCommand(ctx.getSource().withSource(sink), command);
+		return reply(ctx, "capturing " + label);
+	}
+
+	/** A block's full state, such as a turtle egg's hatch stage. */
+	private static int block(CommandContext<CommandSourceStack> ctx) {
+		ServerLevel level = overworld(ctx);
+		BlockPos pos = pos(ctx);
+		return reply(ctx, String.format(Locale.ROOT, "block x=%d local=%d %s village=%s", pos.getX(), local(level, pos.getX() + 0.5), level.getBlockState(pos),
+				level.isVillage(pos)));
 	}
 
 	/** Moves a bot next to a bed and uses it, as a right click would (bots stay in creative, which may sleep). */

@@ -100,7 +100,10 @@ public final class DaybreakCommands {
 		DaybreakConfig config = DaybreakConfig.get();
 		StringBuilder text = new StringBuilder(String.format(Locale.ROOT, "Daybreak %s, %s blocks per day, later towards the %s, dimensions %s",
 				config.enabled ? "enabled" : "disabled", config.blocksPerDay, config.direction == DaybreakConfig.Direction.EAST_LATER ? "east" : "west",
-				config.dimensions));
+				config.activeDimensions()));
+		if (!config.activeDimensions().equals(new java.util.LinkedHashSet<>(config.dimensions))) {
+			text.append(String.format(Locale.ROOT, " (the file lists %s, from the next restart)", config.dimensions));
+		}
 		text.append(String.format(Locale.ROOT, "\nDaytime is %.0f%% of the day", SolarTime.daytimeFraction() * 100));
 		INFO.forEach(line -> text.append('\n').append(line.get()));
 		return reply(ctx, text.toString());

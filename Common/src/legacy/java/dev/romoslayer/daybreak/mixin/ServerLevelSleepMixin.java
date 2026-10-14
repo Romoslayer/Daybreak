@@ -4,7 +4,6 @@ import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.romoslayer.daybreak.sleep.SleepRules;
-import dev.romoslayer.daybreak.time.RegionalTime;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.server.level.ServerLevel;
@@ -13,9 +12,9 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
 /**
- * Where vanilla decides that the night is over because enough players are asleep. Daybreak adds its own conditions, and
- * the day time moves by the amount SleepRules works out for the sleepers instead of to the next x = 0 morning. This is
- * the same on every loader: Forge and NeoForge only change the value handed to the same call.
+ * Where vanilla decides that the night is over because enough players are asleep. Daybreak adds its own conditions; how
+ * far the day time then moves is loader-specific (a mixin on Fabric, the sleep-finished event's input on Forge and
+ * NeoForge, so their listeners still run).
  */
 @Mixin(ServerLevel.class)
 abstract class ServerLevelSleepMixin {
@@ -23,15 +22,6 @@ abstract class ServerLevelSleepMixin {
 			target = "Lnet/minecraft/server/players/SleepStatus;areEnoughDeepSleeping(ILjava/util/List;)Z"))
 	private boolean daybreak$regionalNight(boolean enoughAsleep) {
 		return enoughAsleep && SleepRules.mayFinishSleeping((ServerLevel) (Object) this);
-	}
-
-	@WrapOperation(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;setDayTime(J)V"))
-	private void daybreak$skipToSleepersMorning(ServerLevel level, long morning, Operation<Void> original) {
-		if (!RegionalTime.isRegional(level)) {
-			original.call(level, morning);
-			return;
-		}
-		original.call(level, level.getDayTime() + SleepRules.endNight(level));
 	}
 
 	/** Vanilla announces "Sleeping through this night" as soon as enough are in bed; not when Daybreak holds the skip back. */

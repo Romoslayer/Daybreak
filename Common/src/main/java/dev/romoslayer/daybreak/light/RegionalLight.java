@@ -11,12 +11,11 @@ import net.minecraft.world.level.Level;
  * ({@code Level.skyDarken}) whenever light is read. Daybreak subtracts the darkening of the position being read, worked
  * out the way vanilla works out its own (so weather blends in exactly as vanilla's), for that position's local time.
  * <p>
- * The darkening depends only on the local time and the weather, so on the server thread it is cached for the current
- * tick per 16 ticks of offset (an error of at most 16 ticks of time at any scale).
+ * The darkening depends only on the local time and the weather (vanilla's sky light attribute is not positional), so on
+ * the server thread it is cached for the current tick per local time: positions with the same offset share the exact
+ * same answer, whichever of them is asked first.
  */
 public final class RegionalLight {
-	private static final int BUCKET_TICKS = 16;
-
 	private RegionalLight() {
 	}
 
@@ -26,12 +25,12 @@ public final class RegionalLight {
 	}
 
 	public static final class Cache {
-		private final Long2IntOpenHashMap byBucket = new Long2IntOpenHashMap();
+		private final Long2IntOpenHashMap byOffset = new Long2IntOpenHashMap();
 		private long gameTime = Long.MIN_VALUE;
 		private long clock = Long.MIN_VALUE;
 
 		public Cache() {
-			this.byBucket.defaultReturnValue(-1);
+			this.byOffset.defaultReturnValue(-1);
 		}
 	}
 
@@ -48,16 +47,19 @@ public final class RegionalLight {
 		long gameTime = level.getGameTime();
 		long clock = RegionalTime.worldClock(serverLevel);
 		if (gameTime != cache.gameTime || clock != cache.clock) {
-			// A new tick, or /time or a sleep skip changed the clock within this one
-			cache.byBucket.clear();
+			// A new tick, or /time or a sleep skip changed the clock within this one. The table keeps the size the last
+			// tick needed, so a burst of reads somewhere does not leave a large table behind.
+			int used = cache.byOffset.size();
+			cache.byOffset.clear();
+			cache.byOffset.trim(used);
 			cache.gameTime = gameTime;
 			cache.clock = clock;
 		}
-		long bucket = Math.floorDiv(RegionalTime.offsetTicks(x), BUCKET_TICKS);
-		int darken = cache.byBucket.get(bucket);
+		long offset = RegionalTime.offsetTicks(x);
+		int darken = cache.byOffset.get(offset);
 		if (darken < 0) {
 			darken = compute(level, x, y, z);
-			cache.byBucket.put(bucket, darken);
+			cache.byOffset.put(offset, darken);
 		}
 		return darken;
 	}

@@ -2,6 +2,7 @@ package dev.romoslayer.daybreak.context;
 
 import java.util.function.Supplier;
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
@@ -29,6 +30,10 @@ public interface RegionalContext {
 
 	/** Runs {@code action} with {@code pos} as the context, restoring the previous one afterwards (contexts nest). */
 	static <T> T with(Level level, Vec3 pos, Supplier<T> action) {
+		// Only the level's own server thread has contexts; code on any other thread runs as it would without Daybreak
+		if (!(level instanceof ServerLevel serverLevel) || !serverLevel.getServer().isSameThread()) {
+			return action.get();
+		}
 		RegionalContext context = (RegionalContext) level;
 		Vec3 previous = context.daybreak$context();
 		context.daybreak$setContext(pos);

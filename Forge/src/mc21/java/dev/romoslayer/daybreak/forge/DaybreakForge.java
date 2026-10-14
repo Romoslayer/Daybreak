@@ -8,11 +8,13 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.fml.loading.FMLPaths;
 
-/** Forge entry point (Forge 52, Minecraft 1.21.x). Everything else is the shared mixins. */
+/** Forge entry point (Forge 52, Minecraft 1.21.x). The night skip goes through Forge's sleep-finished event (see ServerLevelForgeSkipMixin). */
 @Mod(Daybreak.MOD_ID)
 public final class DaybreakForge {
 	public DaybreakForge(FMLJavaModLoadingContext context) {
 		Daybreak.init(FMLPaths.CONFIGDIR.get());
+		// Dev servers only: a stand-in listener for the sleep-finished event
+		Daybreak.installTestPart("dev.romoslayer.daybreak.testharness.ForgeSleepProbe");
 		MinecraftForge.EVENT_BUS.addListener((RegisterCommandsEvent event) -> DaybreakCommands.register(event.getDispatcher()));
 	}
 }

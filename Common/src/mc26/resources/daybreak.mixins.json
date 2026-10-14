@@ -17,6 +17,7 @@
 		"ServerCommonPacketListenerMixin",
 		"ServerLevelMixin",
 		"ServerLevelSleepMixin",
+		"ServerPlayerBedMixin",
 		"ServerPlayerMixin",
 		"TimelineMixin",
 		"ValueSamplerMixin",

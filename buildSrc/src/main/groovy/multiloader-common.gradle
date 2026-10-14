@@ -66,8 +66,9 @@ processResources {
     // NeoForge's own version: 26.x pins it to the game's ("26.3.0.64-beta" -> [26.3,26.4)), 1.21.1 is NeoForge 21.1.x
     def neoParts = neoforge_version.tokenize('.')
     def neoforgeRange = "[${neoParts[0]}.${neoParts[1]},${neoParts[0]}.${(neoParts[1] as int) + 1})"
-    // The mixin configs each loader declares: Enhanced Celestials 2 support and Fabric's sleep-skip mixin are 26.x only
-    def neoforgeMixins = (legacy ? ["${mod_id}.mixins.json"] : ["${mod_id}.mixins.json", "${mod_id}.ec2.mixins.json"])
+    // The mixin configs NeoForge declares: Enhanced Celestials 2 support is 26.x only; NeoForge 21.1 has its own
+    // sleep-skip mixin (NeoForge 26.x uses an event instead; 1.20.1 is built as Forge)
+    def neoforgeMixins = (legacy ? ["${mod_id}.mixins.json", "${mod_id}.neoforge.mixins.json"] : ["${mod_id}.mixins.json", "${mod_id}.ec2.mixins.json"])
             .collect { "[[mixins]]\nconfig = \"${it}\"\n" }.join('\n')
     def expandProps = [
             version              : project.version.toString(),
@@ -89,10 +90,11 @@ processResources {
     filesMatching(['META-INF/neoforge.mods.toml', 'fabric.mod.json']) {
         expand expandProps
     }
-    // fabric.mod.json lists every mixin config (so the source stays valid JSON); 1.21.x and 1.20.x have only the shared one
+    // fabric.mod.json lists every mixin config (so the source stays valid JSON); 1.21.x and 1.20.x have no Enhanced
+    // Celestials 2 support
     if (legacy) {
         filesMatching('fabric.mod.json') {
-            filter { it.replace(", \"${mod_id}.fabric.mixins.json\", \"${mod_id}.ec2.mixins.json\"", '') }
+            filter { it.replace(", \"${mod_id}.ec2.mixins.json\"", '') }
         }
     }
     // Minecraft 1.20.x runs on Java 17, and its Mixin (Forge 47's in particular) knows no higher compatibility level

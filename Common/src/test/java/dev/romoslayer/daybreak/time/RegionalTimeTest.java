@@ -64,6 +64,22 @@ class RegionalTimeTest {
 	}
 
 	@Test
+	void clientClockFitsIn32Bits() {
+		// The furthest a clock can get: blocksPerDay 1 at the world border (x = 29 999 984) gives 719 999 616 000 ticks
+		long border = RegionalTime.offsetTicks(29_999_984, 1, true);
+		for (long clock : new long[] {RegionalTime.CLIENT_CLOCK_LIMIT, RegionalTime.CLIENT_CLOCK_LIMIT + 1, RegionalTime.CLIENT_CLOCK_LIMIT + 191_999,
+				RegionalTime.CLIENT_CLOCK_LIMIT + 192_000, border, -border, Long.MAX_VALUE / 2, -(Long.MAX_VALUE / 2)}) {
+			long sent = RegionalTime.clientClock(clock);
+			assertTrue(sent >= 0 && sent <= Integer.MAX_VALUE, "fits a signed 32-bit number for " + clock + ": " + sent);
+			assertEquals(Math.floorMod(clock, RegionalTime.MOON_CYCLE_TICKS), Math.floorMod(sent, RegionalTime.MOON_CYCLE_TICKS),
+					"same time of day and moon phase for " + clock);
+		}
+		assertEquals(RegionalTime.CLIENT_CLOCK_LIMIT, RegionalTime.clientClock(RegionalTime.CLIENT_CLOCK_LIMIT), "the limit itself is sent unchanged");
+		assertTrue(RegionalTime.clientClock(RegionalTime.CLIENT_CLOCK_LIMIT + 1) > RegionalTime.CLIENT_CLOCK_LIMIT - RegionalTime.MOON_CYCLE_TICKS,
+				"moved down by just one cycle past the limit");
+	}
+
+	@Test
 	void usesTheConfiguredSettings() {
 		DaybreakConfig.set(DaybreakConfig.parse("{\"blocksPerDay\": 12000, \"direction\": \"WEST_LATER\"}", new ArrayList<>()));
 		assertEquals(-12000, RegionalTime.offsetTicks(6000));

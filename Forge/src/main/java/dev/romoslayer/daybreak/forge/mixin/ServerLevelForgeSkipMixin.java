@@ -9,9 +9,11 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
 /**
- * Forge ends a slept-through night by setting the clock to whatever its sleep-finished event decides (the next x = 0
- * morning by default). With regional time the clock moves by the amount SleepRules works out for the sleepers instead,
- * as the Fabric and NeoForge builds do.
+ * Forge ends a slept-through night by firing its sleep-finished event with vanilla's proposed time (the next x = 0
+ * morning) and setting the clock to whatever the event returns. With regional time the proposal is the sleepers' own
+ * morning (SleepRules) instead; the event still fires, so other mods are told and may still move the time further
+ * (Forge only lets them move it later than now). The skip cooldown starts only if the clock actually moves. The same
+ * on every Minecraft version Daybreak supports.
  */
 @Mixin(ServerLevel.class)
 abstract class ServerLevelForgeSkipMixin {
@@ -21,6 +23,10 @@ abstract class ServerLevelForgeSkipMixin {
 		if (!RegionalTime.isRegional(level)) {
 			return original.call(level, newTime, minTime);
 		}
-		return minTime + SleepRules.endNight(level);
+		long time = original.call(level, minTime + SleepRules.skipTicks(level), minTime);
+		if (time > minTime) {
+			SleepRules.skipped(level);
+		}
+		return time;
 	}
 }

@@ -7,6 +7,7 @@
 		"BlockMixin",
 		"BoundTickingBlockEntityMixin",
 		"BrainMixin",
+		"DaylightDetectorBlockMixin",
 		"DimensionTypeMixin",
 		"LevelMixin",
 		"MinecraftServerMixin",
@@ -19,6 +20,7 @@
 		"ServerLevelMixin",
 		"ServerLevelSleepMixin",
 		"ServerPlayerMixin",
+		"SpawnPlacementsMixin",
 		"VillageSiegeMixin"
 	],
 	"injectors": {

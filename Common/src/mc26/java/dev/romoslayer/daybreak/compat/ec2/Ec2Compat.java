@@ -10,6 +10,7 @@ import dev.romoslayer.daybreak.config.DaybreakConfig;
 import dev.romoslayer.daybreak.context.RegionalContext;
 import dev.romoslayer.daybreak.sleep.SleepRules;
 import dev.romoslayer.daybreak.time.RegionalTime;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -34,6 +35,8 @@ import net.minecraft.world.phys.Vec3;
 public final class Ec2Compat {
 	private static final String FORECAST_CLASS = "dev.corgitaco.enhancedcelestials2core.api.lunarevent.LunarForecast";
 	private static boolean active;
+	/** Whether EC2 can be asked to keep the years of far-away places (LunarForecastYearsMixin applied). */
+	private static boolean years;
 	/** The event each player was last told about. */
 	private static final Map<UUID, Holder<LunarEvent>> TOLD = new HashMap<>();
 
@@ -50,6 +53,10 @@ public final class Ec2Compat {
 			return;
 		}
 		Daybreak.LOGGER.info("Enhanced Celestials found: lunar events follow each place's own night");
+		years = Boolean.getBoolean(Ec2MixinPlugin.APPLIED_PREFIX + "dev.romoslayer.daybreak.compat.ec2.mixin.LunarForecastYearsMixin");
+		if (!years) {
+			Daybreak.LOGGER.warn("Daybreak could not hook Enhanced Celestials' yearly schedule: places a whole lunar year ahead of or behind the world get no lunar events");
+		}
 		Daybreak.addTicker(Ec2Compat::tick);
 		SleepRules.addBlocker(Ec2Compat::sleepBlocker);
 		DaybreakCommands.addTimeExtra(Ec2Compat::describe);
@@ -112,6 +119,9 @@ public final class Ec2Compat {
 
 	/** EC2 announces event changes to the whole dimension at once; here each player hears it at their own night. */
 	private static void tick(MinecraftServer server) {
+		if (years) {
+			keepPlayersYears(server);
+		}
 		if (!enabled()) {
 			TOLD.clear();
 			return;
@@ -134,6 +144,34 @@ public final class Ec2Compat {
 		}
 		if (server.getTickCount() % 200 == 0) {
 			TOLD.keySet().removeIf(id -> server.getPlayerList().getPlayer(id) == null);
+		}
+	}
+
+	/**
+	 * EC2 rolls and keeps the events of the years around the world clock's year only. Each regional dimension's forecast
+	 * also keeps the years around every player's own local year (none once regional events are switched off).
+	 */
+	private static void keepPlayersYears(MinecraftServer server) {
+		boolean enabled = enabled();
+		for (ServerLevel level : server.getAllLevels()) {
+			if (!RegionalTime.isRegional(level)) {
+				continue;
+			}
+			forecast(level).ifPresent(forecast -> {
+				Ec2Years kept = (Ec2Years) forecast;
+				long yearTicks = kept.daybreak$yearTicks();
+				LongOpenHashSet needed = new LongOpenHashSet();
+				if (enabled && yearTicks > 0) {
+					long world = RegionalTime.worldClock(level);
+					for (ServerPlayer player : level.players()) {
+						long year = Math.floorDiv(RegionalTime.solarClock(world, player.getX()), yearTicks);
+						needed.add(year - 1);
+						needed.add(year);
+						needed.add(year + 1);
+					}
+				}
+				kept.daybreak$keepYears(needed);
+			});
 		}
 	}
 }
